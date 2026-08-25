@@ -1,0 +1,13 @@
+{
+  "name": "problemoverflow",
+  "private": true,
+  "version": "0.1.0",
+  "description": "A public problem board. Help stays on the card.",
+  "engines": {
+    "node": ">=22.22.0"
+  },
+  "scripts": {
+    "start": "node bin/serve.js",
+    "test": "node bin/selfcheck.js"
+  }
+}

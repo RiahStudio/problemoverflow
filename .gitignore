@@ -1,0 +1,50 @@
+﻿node_modules/
+
+# Browser profiles - match by SHAPE, never by name. ".gemini-sync-profile/"
+# did not match ".gemini-sync-profile-brave/", and that one character published
+# a 31MB Brave profile with history, cookies and saved logins.
+*-sync-profile*/
+*-sync-profile-*/
+**/*sync-profile*/
+**/user-data-dir/
+**/playwright-profile*/
+**/puppeteer_dev_*/
+**/BrowserMetrics/
+**/Crashpad/
+**/Local State
+**/Login Data
+**/Login Data-journal
+**/Web Data
+**/Web Data-journal
+**/Network/Cookies
+**/Network/Cookies-journal
+
+# Credentials
+.env
+.env.*
+*.pem
+*.key
+*.pfx
+*.p12
+*.keystore
+id_rsa
+id_rsa.*
+id_ed25519
+id_ed25519.*
+.netrc
+*.har
+**/.claude/.credentials.json
+**/.codex/auth.json
+**/.grok/auth.json
+**/oauth_creds.json
+
+# Local snapshots and litter
+usage-data.js
+scratch/
+test-results/
+active-writes/
+**/__pycache__/
+*.pyc
+*.log
+.DS_Store
+Thumbs.db
