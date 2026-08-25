@@ -1,0 +1,96 @@
+:root {
+  color-scheme: light;
+
+  --color-paper: oklch(96.2% 0.007 80);
+  --color-paper-2: oklch(99.5% 0.003 90);
+  --color-paper-3: oklch(94% 0.01 80);
+  --color-ink: oklch(24% 0.02 50);
+  --color-ink-2: oklch(36% 0.016 50);
+  --color-rule: oklch(90% 0.008 80);
+  --color-rule-2: oklch(78% 0.012 70);
+  --color-muted: oklch(50% 0.016 50);
+  --color-neutral: oklch(42% 0.014 50);
+  --color-accent: oklch(55% 0.16 42);
+  --color-accent-ink: oklch(99% 0.01 90);
+  --color-focus: oklch(52% 0.18 42);
+  --color-success: oklch(42% 0.1 155);
+  --color-danger: oklch(50% 0.16 28);
+  --color-note: oklch(52% 0.1 85);
+
+  --font-display: "Geist", ui-sans-serif, sans-serif;
+  --font-body: "Geist", ui-sans-serif, sans-serif;
+  --font-outlier: "IBM Plex Mono", ui-monospace, monospace;
+
+  --display-weight: 600;
+  --display-style: normal;
+  --tracking-display: -0.03em;
+  --tracking-label: 0.02em;
+
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-md: 1rem;
+  --text-lg: 1.25rem;
+  --text-xl: 1.5rem;
+  --text-2xl: 2rem;
+  --text-display: clamp(1.2rem, 1.05rem + 0.5vw, 1.45rem);
+
+  --space-3xs: 0.25rem;
+  --space-2xs: 0.5rem;
+  --space-xs: 0.75rem;
+  --space-sm: 1rem;
+  --space-md: 1.5rem;
+  --space-lg: 2rem;
+  --space-xl: 3rem;
+  --space-2xl: 4.5rem;
+  --space-3xl: 7rem;
+  --space-4xl: 11rem;
+
+  --rule-hair: 1px;
+  --rule-fine: 2px;
+  --radius-card: 8px;
+  --radius-pill: 999px;
+  --radius-input: 6px;
+
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.7, 0, 0.84, 0);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+
+  --dur-micro: 140ms;
+  --dur-short: 240ms;
+  --dur-long: 480ms;
+
+  --shadow-card: 0 1px 2px color-mix(in oklch, var(--color-ink) 8%, transparent);
+  --shadow-bar: 0 1px 0 var(--color-rule), 0 1px 8px color-mix(in oklch, var(--color-ink) 5%, transparent);
+
+  --z-base: 1;
+  --z-raised: 10;
+  --z-dropdown: 100;
+  --z-sticky: 200;
+  --z-modal: 400;
+  --z-toast: 500;
+  --z-tooltip: 600;
+
+  --nav-edge: 4.25rem;
+
+  --bg: var(--color-paper);
+  --surface: var(--color-paper-2);
+  --ink: var(--color-ink);
+  --body: var(--color-ink-2);
+  --mute: var(--color-muted);
+  --rule: var(--color-rule);
+  --link: var(--color-ink);
+  --link-hover: var(--color-accent);
+  --ask: var(--color-accent);
+  --ask-ink: var(--color-accent-ink);
+  --tag-bg: var(--color-paper-3);
+  --tag-ink: var(--color-ink-2);
+  --score: var(--color-muted);
+  --here: var(--color-success);
+  --warn: var(--color-accent);
+  --agent: var(--color-note);
+  --font-id: var(--font-display);
+  --font-ui: var(--font-body);
+  --pad: var(--space-sm);
+  --z-skip: var(--z-tooltip);
+  --z-top: var(--z-sticky);
+}
