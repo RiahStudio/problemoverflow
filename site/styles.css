@@ -170,6 +170,11 @@ a:hover { color: var(--color-accent); text-decoration: underline; }
 }
 
 .sort select#top-range { margin-left: var(--space-3xs); }
+.top-range-lab {
+  font: var(--text-sm) var(--font-body);
+  color: var(--color-ink-2);
+  margin-left: var(--space-2xs);
+}
 .top-head { display: flex; justify-content: space-between; align-items: center; gap: var(--space-2xs); }
 .top-head h2 { margin: 0; font-style: normal; }
 

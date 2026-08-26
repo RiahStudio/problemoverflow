@@ -24,6 +24,7 @@
     joinKey: "",
     sort: "live",
     tagFilter: "",
+    cardId: "",
   };
 
   function esc(value) {
@@ -58,6 +59,40 @@
     if (key) sessionStorage.setItem("po-key-" + channelId, key);
   }
 
+  const SORTS = ["live", "rising", "top"];
+  const RANGES = ["day", "week", "month", "year", "all"];
+
+  function channelIsPublic(channelId) {
+    const ch = (state.channels || []).find((c) => c.id === channelId);
+    if (!ch) return channelId === "public";
+    return ch.visibility === "public" && ch.kind !== "pair";
+  }
+
+  function hashFromState(extra) {
+    const opt = extra || {};
+    const channelId = opt.channelId || state.channelId || "public";
+    const joinKey = "joinKey" in opt ? opt.joinKey : state.joinKey;
+    const sort = "sort" in opt ? opt.sort : state.sort;
+    const range = "range" in opt ? opt.range : (topRange && topRange.value);
+    const tag = "tag" in opt ? opt.tag : state.tagFilter;
+    const cardId = "card" in opt ? opt.card : state.cardId;
+    const params = new URLSearchParams();
+    if (joinKey && !channelIsPublic(channelId)) params.set("k", joinKey);
+    if (sort && sort !== "live") params.set("sort", sort);
+    if (sort === "top" && range && range !== "week") params.set("range", range);
+    if (tag) params.set("tag", tag);
+    if (cardId) params.set("c", cardId);
+    const q = params.toString();
+    return q ? `#/${channelId}?${q}` : `#/${channelId}`;
+  }
+
+  function writeHash() {
+    const next = hashFromState();
+    const cur = location.hash || "#/public";
+    if (cur === next) return;
+    history.replaceState(null, "", location.pathname + location.search + next);
+  }
+
   function parseHash() {
     const raw = (location.hash || "#/public").replace(/^#\/?/, "");
     const [path, query] = raw.split("?");
@@ -65,22 +100,39 @@
     const channelId = path || "public";
     const key = params.get("k") || storedKey(channelId);
     if (params.get("k")) rememberKey(channelId, params.get("k"));
-    if (state.channelId && state.channelId !== channelId) state.tagFilter = "";
     state.channelId = channelId;
     state.joinKey = key;
+    state.cardId = params.get("c") || "";
+    state.tagFilter = params.get("tag") || "";
+    const sort = params.get("sort");
+    state.sort = SORTS.includes(sort) ? sort : "live";
+    const range = params.get("range");
+    if (topRange) {
+      if (RANGES.includes(range)) {
+        topRange.value = range;
+        localStorage.setItem("po-top-range", range);
+      }
+    }
   }
 
   function roomHref(channel) {
-    if (channel.visibility === "public" && channel.kind !== "pair") return "#/public";
     const key = channel.joinKey || storedKey(channel.id);
     if (key) rememberKey(channel.id, key);
-    return key ? `#/${channel.id}?k=${encodeURIComponent(key)}` : `#/${channel.id}`;
+    const publicRoom = channel.visibility === "public" && channel.kind !== "pair";
+    return hashFromState({
+      channelId: channel.id,
+      joinKey: publicRoom ? "" : key,
+      card: "",
+      tag: "",
+    });
   }
 
   function roomLink() {
-    return state.joinKey
-      ? `${location.origin}/#/${state.channelId}?k=${encodeURIComponent(state.joinKey)}`
-      : `${location.origin}/#/${state.channelId}`;
+    return location.origin + hashFromState({ card: "", tag: "", sort: "live", range: "week" });
+  }
+
+  function cardLink(id) {
+    return location.origin + hashFromState({ card: id, tag: "", sort: "live", range: "week" });
   }
 
   async function api(path, options) {
@@ -255,13 +307,14 @@
             </div>
             ${replies ? `<div class="replies">${replies}</div>` : ""}
             <div class="actions">
+              <button class="btn btn-ghost" type="button" data-copy-card="${esc(card.id)}">Copy link</button>
               <button class="btn btn-ghost" type="button" data-buzz="${esc(card.id)}">Copy for Buzz</button>
               ${state.user ? `<button class="btn btn-ghost" type="button" data-work="${esc(card.id)}">${working ? "Working on this ✓" : "Working on this"}</button>` : ""}
             </div>
             ${buzzLink}
             ${state.user ? `<form class="buzz-link" data-buzz-link="${esc(card.id)}">
               <label>Buzz thread
-                <input name="buzzUrl" maxlength="300" placeholder="https://buzz.xyz/…" value="${esc(card.buzzUrl || "")}">
+                <input name="buzzUrl" maxlength="300" placeholder="https://problemoverflow.communities.buzz.xyz/…" value="${esc(card.buzzUrl || "")}">
               </label>
               <button class="btn btn-ghost" type="submit">Save link</button>
             </form>` : ""}
@@ -287,7 +340,7 @@
       const locked = c.visibility !== "public";
       const on = c.id === state.channelId ? " on" : "";
       return `<button class="room${on}" type="button" data-room="${esc(c.id)}" title="${esc(c.blurb)}">
-        ${esc(c.name)}${c.kind === "pair" ? `<span class="lock">you two</span>` : locked ? `<span class="lock">private</span>` : ""}
+        ${esc(c.name)}${c.kind === "pair" ? ` <span class="lock">you two</span>` : locked ? ` <span class="lock">private</span>` : ""}
       </button>`;
     }).join("");
   }
@@ -299,9 +352,20 @@
       const range = (topRange && topRange.value) || "week";
       rows = (snap.top && snap.top[range]) || [];
     } else rows = snap.live || [];
-    if (!state.tagFilter) return rows;
+    if (!state.tagFilter) {
+      if (state.cardId && !rows.some((r) => r.card && r.card.id === state.cardId)) {
+        const pinned = findRow(state.cardId);
+        if (pinned) return [pinned, ...rows];
+      }
+      return rows;
+    }
     const want = state.tagFilter.toLowerCase();
-    return rows.filter((row) => (row.card.tags || []).some((t) => String(t).toLowerCase() === want));
+    const filtered = rows.filter((row) => (row.card.tags || []).some((t) => String(t).toLowerCase() === want));
+    if (state.cardId && !filtered.some((r) => r.card && r.card.id === state.cardId)) {
+      const pinned = findRow(state.cardId);
+      if (pinned) return [pinned, ...filtered];
+    }
+    return filtered;
   }
 
   function renderTagFilter() {
@@ -314,6 +378,49 @@
     }
     el.hidden = false;
     el.innerHTML = `Showing <strong>${esc(state.tagFilter)}</strong> <button type="button" class="tag-clear" data-clear-tag>Show all</button>`;
+  }
+
+  function syncSortUi() {
+    document.querySelectorAll(".sort [data-sort]").forEach((el) => {
+      el.classList.toggle("on", el.dataset.sort === state.sort);
+    });
+    const lab = document.querySelector(".top-range-lab");
+    const showTop = state.sort === "top";
+    if (topRange) topRange.hidden = !showTop;
+    if (lab) lab.hidden = !showTop;
+  }
+
+  function cardEl(id) {
+    return [...feedEl.querySelectorAll(".q")].find((el) => el.getAttribute("data-card") === id) || null;
+  }
+
+  function findRow(id) {
+    const snap = state.snap;
+    if (!snap || !snap.ok) return null;
+    const pools = [snap.live, snap.rising, snap.cards, snap.top && snap.top.all];
+    for (const pool of pools) {
+      if (!Array.isArray(pool)) continue;
+      const row = pool.find((r) => r.card && r.card.id === id);
+      if (row) return row;
+    }
+    return null;
+  }
+
+  function applyOpenFromHash() {
+    const id = state.cardId;
+    if (!id) return;
+    let art = cardEl(id);
+    if (!art) {
+      const row = findRow(id);
+      if (row) {
+        feedEl.insertAdjacentHTML("afterbegin", cardHtml(row));
+        art = cardEl(id);
+      }
+    }
+    if (art) {
+      openCard(art, { silent: true });
+      art.scrollIntoView({ block: "nearest" });
+    }
   }
 
   function emptyFeedHtml() {
@@ -355,7 +462,7 @@
 
   function renderFeed() {
     const snap = state.snap;
-    if (topRange) topRange.hidden = state.sort !== "top";
+    syncSortUi();
     if (!snap || !snap.ok) {
       feedEl.innerHTML = `<p class="empty">${esc((snap && snap.error) || "This room needs its private link.")}</p>`;
       hereEl.innerHTML = "";
@@ -371,6 +478,7 @@
     feedEl.innerHTML = rows.length
       ? rows.map(cardHtml).join("")
       : emptyFeedHtml();
+    applyOpenFromHash();
 
     const here = snap.here || [];
     hereEl.innerHTML = here.length
@@ -595,6 +703,10 @@
     syncAgentBox();
     const panel = $("ask-panel");
     if (panel) panel.open = false;
+    if (result.card && result.card.id) {
+      state.cardId = result.card.id;
+      writeHash();
+    }
     setStatus("Posted. Copy for Buzz when you want it in the hallway.", "ok");
     await loadBoard();
   }
@@ -739,10 +851,19 @@
     await loadBoard();
   }
 
-  function openCard(art) {
+  function openCard(art, opts) {
+    if (!art) return;
+    feedEl.querySelectorAll(".q.open").forEach((el) => {
+      if (el === art) return;
+      el.classList.remove("open");
+      const other = el.querySelector("[data-open]");
+      if (other) other.setAttribute("aria-expanded", "false");
+    });
     art.classList.add("open");
     const t = art.querySelector("[data-open]");
     if (t) t.setAttribute("aria-expanded", "true");
+    state.cardId = art.getAttribute("data-card") || "";
+    if (!(opts && opts.silent)) writeHash();
   }
 
   async function submitAuth(event) {
@@ -836,6 +957,7 @@
 
   topRange.addEventListener("change", () => {
     localStorage.setItem("po-top-range", topRange.value);
+    writeHash();
     renderFeed();
   });
 
@@ -843,9 +965,7 @@
     const btn = event.target.closest("[data-sort]");
     if (!btn) return;
     state.sort = btn.dataset.sort;
-    document.querySelectorAll(".sort button").forEach((el) => {
-      el.classList.toggle("on", el.dataset.sort === state.sort);
-    });
+    writeHash();
     renderFeed();
   });
 
@@ -854,6 +974,7 @@
     tagFilterEl.addEventListener("click", (event) => {
       if (!event.target.closest("[data-clear-tag]")) return;
       state.tagFilter = "";
+      writeHash();
       renderFeed();
     });
   }
@@ -863,12 +984,14 @@
     if (tagBtn) {
       const next = tagBtn.dataset.tag || "";
       state.tagFilter = state.tagFilter === next ? "" : next;
+      writeHash();
       renderFeed();
       return;
     }
     const clearTag = event.target.closest("[data-clear-tag]");
     if (clearTag) {
       state.tagFilter = "";
+      writeHash();
       renderFeed();
       return;
     }
@@ -880,6 +1003,11 @@
     const workBtn = event.target.closest("[data-work]");
     if (workBtn) {
       toggleWorking(workBtn.dataset.work);
+      return;
+    }
+    const copyCardBtn = event.target.closest("[data-copy-card]");
+    if (copyCardBtn) {
+      copyText(cardLink(copyCardBtn.dataset.copyCard), "Link copied.");
       return;
     }
     const buzzBtn = event.target.closest("[data-buzz]");
@@ -918,13 +1046,14 @@
     if (!openBtn) return;
     const art = openBtn.closest(".q");
     const on = !art.classList.contains("open");
-    feedEl.querySelectorAll(".q.open").forEach((el) => {
-      el.classList.remove("open");
-      const t = el.querySelector("[data-open]");
-      if (t) t.setAttribute("aria-expanded", "false");
-    });
-    if (on) art.classList.add("open");
-    openBtn.setAttribute("aria-expanded", on ? "true" : "false");
+    if (on) {
+      openCard(art);
+    } else {
+      art.classList.remove("open");
+      openBtn.setAttribute("aria-expanded", "false");
+      state.cardId = "";
+      writeHash();
+    }
   });
 
   feedEl.addEventListener("submit", (event) => {

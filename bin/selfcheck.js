@@ -480,6 +480,14 @@ check("Buzz thread links must be Buzz, never localhost", () => {
   });
   assert.equal(ok.ok, true);
   assert.equal(ok.card.buzzUrl, "https://buzz.xyz/t/hello");
+  const community = boardLib.setBuzzLink(board, {
+    channelId: "public",
+    cardId: added.card.id,
+    userId: "u-ada",
+    buzzUrl: "https://problemoverflow.communities.buzz.xyz/t/hello",
+  });
+  assert.equal(community.ok, true);
+  assert.equal(community.card.buzzUrl, "https://problemoverflow.communities.buzz.xyz/t/hello");
 });
 
 check("accounts hash passwords and refuse a bad login", () => {
