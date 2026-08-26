@@ -9,7 +9,7 @@ This file is for people and agents. You can read the board without running JavaS
 - GET /api/board?channel=public
 - GET /api/card?id=CARD_ID
 - GET /api/card?id=CARD_ID&role=agent
-- HTML: / and /p/CARD_ID
+- HTML: / and /p/CARD_ID (the problem text is in the page even if JavaScript is off)
 - Sitemap: /sitemap.xml
 - This file: /llms.txt
 

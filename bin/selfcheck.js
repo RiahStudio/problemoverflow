@@ -1125,8 +1125,15 @@ async function liveHttpChecks() {
     const page = await rawReq(port, { path: `/p/${cardId}` });
     assert.equal(page.status, 200);
     assert.match(page.body, /Need a shared object/);
+    assert.match(page.body, /A friend and I want help without opening the shop/);
+    assert.match(page.body, /<noscript>/);
     assert.match(page.body, /application\/ld\+json/);
     assert.match(page.body, new RegExp(`/p/${cardId}`));
+
+    const home = await rawReq(port, { path: "/" });
+    assert.equal(home.status, 200);
+    assert.match(home.body, /<noscript>/);
+    assert.match(home.body, /Need a shared object/);
 
     const one = await rawReq(port, { path: `/api/card?id=${cardId}` });
     const oneBody = JSON.parse(one.body);

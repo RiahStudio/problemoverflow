@@ -225,6 +225,23 @@ function clipMeta(s) {
   return String(s || "").replace(/\s+/g, " ").trim().slice(0, 160);
 }
 
+function noscriptCard(card, url) {
+  const bits = [`<article>`, `<h1>${escapeHtml(card.title)}</h1>`];
+  for (const field of ["pointA", "pointB", "obstacle", "ask"]) {
+    if (card[field]) bits.push(`<p>${escapeHtml(card[field])}</p>`);
+  }
+  bits.push(`<p><a href="${escapeHtml(url)}">${escapeHtml(url)}</a></p>`, `</article>`);
+  return `<noscript>${bits.join("")}</noscript>`;
+}
+
+function noscriptHome(problems, origin) {
+  const items = problems.slice(0, 50).map((c) => {
+    const url = boardLib.publicPermalink(origin, c.id);
+    return `<li><a href="${escapeHtml(url)}">${escapeHtml(c.title)}</a></li>`;
+  }).join("");
+  return `<noscript><h1>Problem Overflow</h1><ol>${items}</ol></noscript>`;
+}
+
 function serveIndex(res, cardId) {
   const filePath = path.join(SITE, "index.html");
   fs.readFile(filePath, "utf8", (err, html) => {
@@ -261,6 +278,7 @@ function serveIndex(res, cardId) {
         },
       };
       out = out.replace("</head>", `<script type="application/ld+json">${JSON.stringify(ld).replace(/</g, "\\u003c")}</script></head>`);
+      out = out.replace("</body>", `${noscriptCard(card, url)}</body>`);
     } else if (!cardId && origin) {
       const problems = boardLib.publicProblems(board);
       if (problems.length) {
@@ -276,6 +294,7 @@ function serveIndex(res, cardId) {
           })),
         };
         out = out.replace("</head>", `<script type="application/ld+json">${JSON.stringify(ld).replace(/</g, "\\u003c")}</script></head>`);
+        out = out.replace("</body>", `${noscriptHome(problems, origin)}</body>`);
       }
     }
     send(res, 200, out, "text/html; charset=utf-8");
