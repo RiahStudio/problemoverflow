@@ -23,6 +23,7 @@
     channelId: "public",
     joinKey: "",
     sort: "live",
+    tagFilter: "",
   };
 
   function esc(value) {
@@ -64,6 +65,7 @@
     const channelId = path || "public";
     const key = params.get("k") || storedKey(channelId);
     if (params.get("k")) rememberKey(channelId, params.get("k"));
+    if (state.channelId && state.channelId !== channelId) state.tagFilter = "";
     state.channelId = channelId;
     state.joinKey = key;
   }
@@ -149,7 +151,10 @@
   function cardHtml(row) {
     const card = row.card;
     const person = who();
-    const tags = (card.tags || []).map((t) => `<span class="tag">${esc(t)}</span>`).join("");
+    const tags = (card.tags || []).map((t) => {
+      const on = state.tagFilter && state.tagFilter.toLowerCase() === String(t).toLowerCase() ? " on" : "";
+      return `<button type="button" class="tag${on}" data-tag="${esc(t)}">${esc(t)}</button>`;
+    }).join("");
     const replyRows = row.replies || [];
     const replies = replyRows.map((r) => `
       <article class="reply">
@@ -288,12 +293,34 @@
   }
 
   function feedRows(snap) {
-    if (state.sort === "rising") return snap.cards || [];
-    if (state.sort === "top") {
+    let rows;
+    if (state.sort === "rising") rows = snap.cards || [];
+    else if (state.sort === "top") {
       const range = (topRange && topRange.value) || "week";
-      return (snap.top && snap.top[range]) || [];
+      rows = (snap.top && snap.top[range]) || [];
+    } else rows = snap.live || [];
+    if (!state.tagFilter) return rows;
+    const want = state.tagFilter.toLowerCase();
+    return rows.filter((row) => (row.card.tags || []).some((t) => String(t).toLowerCase() === want));
+  }
+
+  function renderTagFilter() {
+    const el = $("tag-filter");
+    if (!el) return;
+    if (!state.tagFilter) {
+      el.hidden = true;
+      el.innerHTML = "";
+      return;
     }
-    return snap.live || [];
+    el.hidden = false;
+    el.innerHTML = `Showing <strong>${esc(state.tagFilter)}</strong> <button type="button" class="tag-clear" data-clear-tag>Show all</button>`;
+  }
+
+  function emptyFeedHtml() {
+    if (state.tagFilter) {
+      return `<div class="empty-board"><p class="empty">Nothing tagged ${esc(state.tagFilter)} in this room.</p><p class="empty-hint"><button type="button" class="linkish" data-clear-tag>Show all problems</button></p></div>`;
+    }
+    return `<div class="empty-board"><p class="empty">No problems here yet.</p><p class="empty-hint">Ask a problem to put the stuck thing on the board. Anyone can read. Sign in to post or vote.</p></div>`;
   }
 
   function renderMeet() {
@@ -340,9 +367,10 @@
     $("room-name").textContent = snap.channel.name;
     $("room-blurb").textContent = snap.channel.blurb;
     const rows = feedRows(snap);
+    renderTagFilter();
     feedEl.innerHTML = rows.length
       ? rows.map(cardHtml).join("")
-      : `<p class="empty">This room is empty. Post the stuck thing.</p>`;
+      : emptyFeedHtml();
 
     const here = snap.here || [];
     hereEl.innerHTML = here.length
@@ -821,7 +849,29 @@
     renderFeed();
   });
 
+  const tagFilterEl = $("tag-filter");
+  if (tagFilterEl) {
+    tagFilterEl.addEventListener("click", (event) => {
+      if (!event.target.closest("[data-clear-tag]")) return;
+      state.tagFilter = "";
+      renderFeed();
+    });
+  }
+
   feedEl.addEventListener("click", (event) => {
+    const tagBtn = event.target.closest("[data-tag]");
+    if (tagBtn) {
+      const next = tagBtn.dataset.tag || "";
+      state.tagFilter = state.tagFilter === next ? "" : next;
+      renderFeed();
+      return;
+    }
+    const clearTag = event.target.closest("[data-clear-tag]");
+    if (clearTag) {
+      state.tagFilter = "";
+      renderFeed();
+      return;
+    }
     const voteBtn = event.target.closest("[data-vote]");
     if (voteBtn) {
       vote(voteBtn.dataset.vote);

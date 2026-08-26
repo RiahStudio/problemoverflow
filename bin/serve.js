@@ -49,6 +49,8 @@ const MIME = {
   ".svg": "image/svg+xml",
   ".json": "application/json; charset=utf-8",
   ".png": "image/png",
+  ".txt": "text/plain; charset=utf-8",
+  ".xml": "application/xml; charset=utf-8",
 };
 
 function send(res, code, body, type = "text/plain; charset=utf-8", extra) {
@@ -587,7 +589,5 @@ server.listen(PORT, HOST, () => {
   } else {
     process.stdout.write(`Problem Overflow local desk: http://127.0.0.1:${PORT}/\n`);
   }
-  if (!live.isPublicMode() && !process.env.PO_DATA_DIR) {
-    buzzInbox.startHourly(ROOT, loadBoard, saveBoard);
-  }
+  buzzInbox.startHourly(ROOT, loadBoard, saveBoard, DATA_DIR);
 });

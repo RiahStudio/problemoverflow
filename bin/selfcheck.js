@@ -719,6 +719,51 @@ check("hallway inbox folds a tally file", () => {
   assert.equal(fs.existsSync(path.join(root, "data", "buzz-inbox", "tally.json")), false);
 });
 
+check("hallway inbox can live on the data disk", () => {
+  const inbox = require("../lib/buzz-inbox");
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "po-hallway-disk-"));
+  const data = path.join(root, "disk");
+  const board = boardLib.emptyBoard();
+  const added = boardLib.addCard(board, {
+    channelId: "public",
+    title: "Need a live-disk hallway card",
+    pointA: "I am still on the first side of this problem.",
+    pointB: "I want a second side that a stranger can help with.",
+    obstacle: "A tally on the data disk should fold into rank.",
+    authorName: "Ada",
+    userId: "u-ada",
+  }, now);
+  assert.equal(added.ok, true);
+  fs.mkdirSync(path.join(data, "buzz-inbox"), { recursive: true });
+  fs.writeFileSync(path.join(data, "buzz-inbox", "tally.json"), JSON.stringify({
+    schema: "problemoverflow.buzz-tally/0",
+    items: [{
+      cardId: added.card.id,
+      votes: [{ voterId: "agent-mina", voterName: "Mina agent", role: "agent", direction: "up" }],
+    }],
+  }));
+  let saved = null;
+  const result = inbox.foldFromDisk(root, now, () => board, (next) => { saved = next; }, data);
+  assert.equal(result.ok, true);
+  assert.equal(saved.votes.filter((v) => v.source === "buzz").length, 1);
+  assert.equal(fs.existsSync(path.join(data, "buzz-inbox", "tally.json")), false);
+});
+
+check("public board ships robots, a sitemap, and our Buzz hallway", () => {
+  const site = path.join(__dirname, "..", "site");
+  const html = fs.readFileSync(path.join(site, "index.html"), "utf8");
+  const robots = fs.readFileSync(path.join(site, "robots.txt"), "utf8");
+  const map = fs.readFileSync(path.join(site, "sitemap.xml"), "utf8");
+  assert.match(robots, /Sitemap: https:\/\/problemoverflow.com\/sitemap.xml/);
+  assert.match(map, /https:\/\/problemoverflow.com\//);
+  assert.match(html, /rel="canonical"/);
+  assert.match(html, /href="https:\/\/problemoverflow.communities.buzz.xyz"/);
+  assert.doesNotMatch(html, /href="https:\/\/buzz\.xyz"/);
+  const serve = fs.readFileSync(path.join(__dirname, "serve.js"), "utf8");
+  assert.match(serve, /"\.xml"/);
+  assert.match(serve, /startHourly\(ROOT, loadBoard, saveBoard, DATA_DIR\)/);
+});
+
 check("live config picks public bind, origin, and Secure cookies", () => {
   const old = {
     PO_MODE: process.env.PO_MODE,
