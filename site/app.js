@@ -294,7 +294,7 @@
 
   function feedRows(snap) {
     let rows;
-    if (state.sort === "rising") rows = snap.cards || [];
+    if (state.sort === "rising") rows = snap.rising || [];
     else if (state.sort === "top") {
       const range = (topRange && topRange.value) || "week";
       rows = (snap.top && snap.top[range]) || [];

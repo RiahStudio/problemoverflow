@@ -340,6 +340,58 @@ check("public board has Top windows and no auto Should meet", () => {
   assert.equal(snap.top.all.length, 2);
 });
 
+check("Rising orders recent heat, not all-time rank", () => {
+  const board = boardLib.emptyBoard();
+  const oldAt = now - 10 * 24 * 60 * 60 * 1000;
+  const newAt = now - 3 * 60 * 60 * 1000;
+  const oldCard = boardLib.addCard(board, {
+    channelId: "public",
+    title: "Old problem still sitting",
+    pointA: "I have been stuck on this for a while.",
+    pointB: "I want a second side a stranger can help with.",
+    obstacle: "The old votes should win all-time Top, not Rising.",
+    authorName: "Ada",
+    userId: "u-ada",
+  }, oldAt);
+  const newCard = boardLib.addCard(board, {
+    channelId: "public",
+    title: "Fresh problem heating up",
+    pointA: "I just hit this block today.",
+    pointB: "I want a second side a stranger can help with.",
+    obstacle: "A recent vote should lift this in Rising.",
+    authorName: "Ben",
+    userId: "u-ben",
+  }, newAt);
+  assert.equal(oldCard.ok, true);
+  assert.equal(newCard.ok, true);
+  const oldVoteAt = now - 9 * 24 * 60 * 60 * 1000;
+  for (const who of [
+    { voterId: "u-mina", voterName: "Mina" },
+    { voterId: "u-cal", voterName: "Cal" },
+    { voterId: "u-deb", voterName: "Deb" },
+  ]) {
+    const voted = boardLib.addVote(board, {
+      channelId: "public",
+      cardId: oldCard.card.id,
+      voterId: who.voterId,
+      voterName: who.voterName,
+      role: "human",
+    }, oldVoteAt);
+    assert.equal(voted.ok, true);
+  }
+  const recent = boardLib.addVote(board, {
+    channelId: "public",
+    cardId: newCard.card.id,
+    voterId: "u-eli",
+    voterName: "Eli",
+    role: "human",
+  }, now - 60 * 60 * 1000);
+  assert.equal(recent.ok, true);
+  const snap = boardLib.snapshot(board, "public", "", now);
+  assert.equal(snap.rising[0].card.id, newCard.card.id);
+  assert.equal(snap.top.all[0].card.id, oldCard.card.id);
+});
+
 check("private rooms also have Top", () => {
   const cards = overlapCards.map((c) => ({ ...c, channel: "chiang-mai-ai" }));
   const board = boardLib.normalizeBoard({ cards });
