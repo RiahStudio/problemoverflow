@@ -91,9 +91,22 @@
     return m ? m[1] : "";
   }
 
+  function roomIdFromPath() {
+    const m = String(location.pathname || "").match(/^\/r\/([A-Za-z0-9._-]+)$/);
+    return m ? m[1] : "";
+  }
+
+  function isPublicTopic(channelId) {
+    const ch = (state.channels || []).find((c) => c.id === channelId);
+    return Boolean(ch && ch.visibility === "public" && ch.kind === "topic");
+  }
+
   function pagePath() {
     if (channelIsPublic(state.channelId) && state.cardId) {
       return "/p/" + encodeURIComponent(state.cardId);
+    }
+    if (isPublicTopic(state.channelId)) {
+      return "/r/" + encodeURIComponent(state.channelId);
     }
     return "/";
   }
@@ -108,17 +121,22 @@
   }
 
   function parseHash() {
-    const raw = (location.hash || "#/public").replace(/^#\/?/, "");
+    const pathCard = cardIdFromPath();
+    const pathRoom = roomIdFromPath();
+    const raw = (location.hash || (pathRoom ? "#/" + pathRoom : "#/public")).replace(/^#\/?/, "");
     const [path, query] = raw.split("?");
     const params = new URLSearchParams(query || "");
-    const channelId = path || "public";
+    const channelId = path || pathRoom || "public";
     const key = params.get("k") || storedKey(channelId);
     if (params.get("k")) rememberKey(channelId, params.get("k"));
-    const pathCard = cardIdFromPath();
-    if (pathCard && (channelId === "public" || channelIsPublic(channelId))) {
-      state.channelId = "public";
-      state.joinKey = storedKey("public");
+    if (pathCard) {
+      state.channelId = pathRoom || channelId || "public";
+      state.joinKey = storedKey(state.channelId);
       state.cardId = params.get("c") || pathCard;
+    } else if (pathRoom) {
+      state.channelId = pathRoom;
+      state.joinKey = storedKey(pathRoom);
+      state.cardId = params.get("c") || "";
     } else {
       state.channelId = channelId;
       state.joinKey = key;
@@ -146,6 +164,59 @@
       card: "",
       tag: "",
     });
+  }
+
+  function goRoom(channel) {
+    if (!channel) return;
+    state.channelId = channel.id;
+    state.joinKey = storedKey(channel.id);
+    state.cardId = "";
+    state.tagFilter = "";
+    const dest = pagePath() + location.search + roomHref(channel);
+    const cur = location.pathname + location.search + (location.hash || "");
+    if (cur !== dest) history.pushState(null, "", dest);
+    pingHere().then(loadBoard);
+  }
+
+  function openTopicBox() {
+    const box = $("topic-box");
+    if (!box) return;
+    if (typeof box.showModal === "function") box.showModal();
+    else box.setAttribute("open", "");
+    const name = $("topic-name");
+    if (name) name.focus();
+  }
+
+  function closeTopicBox() {
+    const box = $("topic-box");
+    if (!box) return;
+    if (typeof box.close === "function" && box.open) box.close();
+    else box.removeAttribute("open");
+  }
+
+  async function submitTopic(event) {
+    event.preventDefault();
+    if (!needAccount()) return;
+    const data = new FormData(event.target);
+    const result = await api("/api/rooms", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: data.get("name"),
+        blurb: data.get("blurb"),
+      }),
+    });
+    if (!result.ok) {
+      setStatus(result.error || "That topic did not open.", "bad");
+      return;
+    }
+    closeTopicBox();
+    event.target.reset();
+    const boot = await api("/api/boot");
+    if (boot.ok) state.channels = boot.channels || state.channels;
+    renderRooms();
+    goRoom(result.channel);
+    setStatus("Topic is open.", "ok");
   }
 
   function roomLink() {
@@ -387,13 +458,30 @@
   }
 
   function renderRooms() {
-    roomsEl.innerHTML = state.channels.map((c) => {
+    const house = ["public", "chiang-mai-ai", "video"];
+    const ranked = [...(state.channels || [])].sort((a, b) => {
+      const slot = (c) => {
+        const i = house.indexOf(c.id);
+        if (i >= 0) return i;
+        if (c.kind === "topic") return 50;
+        if (c.kind === "pair") return 90;
+        return 70;
+      };
+      const d = slot(a) - slot(b);
+      if (d) return d;
+      return String(a.name).localeCompare(String(b.name));
+    });
+    const buttons = ranked.map((c) => {
       const locked = c.visibility !== "public";
       const on = c.id === state.channelId ? " on" : "";
       return `<button class="room${on}" type="button" data-room="${esc(c.id)}" title="${esc(c.blurb)}">
         ${esc(c.name)}${c.kind === "pair" ? ` <span class="lock">you two</span>` : locked ? ` <span class="lock">private</span>` : ""}
       </button>`;
-    }).join("");
+    });
+    if (state.user) {
+      buttons.push(`<button class="room room-new" type="button" data-new-topic>New topic</button>`);
+    }
+    roomsEl.innerHTML = buttons.join("");
   }
 
   function feedRows(snap) {
@@ -706,7 +794,6 @@
       topRange.value = savedRange;
     }
     parseHash();
-    writeHash();
     const boot = await api("/api/boot");
     if (!boot.ok) {
       setStatus("The board is not up.", "bad");
@@ -721,6 +808,16 @@
       state.session = "";
       localStorage.removeItem("po-session");
     }
+    const pathCard = cardIdFromPath();
+    if (pathCard) {
+      const one = await api("/api/card?id=" + encodeURIComponent(pathCard));
+      if (one.ok && one.channelId) {
+        state.channelId = one.channelId;
+        state.cardId = one.card && one.card.id ? one.card.id : pathCard;
+        state.joinKey = storedKey(state.channelId);
+      }
+    }
+    writeHash();
     renderAuth();
     renderRooms();
     syncAgentBox();
@@ -994,6 +1091,12 @@
   });
 
   roomsEl.addEventListener("click", (event) => {
+    const make = event.target.closest("[data-new-topic]");
+    if (make) {
+      if (!needAccount()) return;
+      openTopicBox();
+      return;
+    }
     const btn = event.target.closest("[data-room]");
     if (!btn) return;
     const channel = state.channels.find((c) => c.id === btn.dataset.room);
@@ -1001,7 +1104,7 @@
     if (channel.visibility !== "public" && !storedKey(channel.id) && state.channelId !== channel.id) {
       setStatus("That room needs its private link.", "bad");
     }
-    location.hash = roomHref(channel);
+    goRoom(channel);
   });
 
   $("copy-link").addEventListener("click", () => {
@@ -1024,6 +1127,8 @@
   });
   $("auth-form").addEventListener("submit", submitAuth);
   $("auth-google").addEventListener("click", startGoogle);
+  $("topic-form").addEventListener("submit", submitTopic);
+  $("topic-cancel").addEventListener("click", closeTopicBox);
   $("meet-on").addEventListener("change", saveMeetSettings);
   $("meet-private").addEventListener("change", saveMeetSettings);
   $("meet-refresh").addEventListener("click", () => loadMeet());

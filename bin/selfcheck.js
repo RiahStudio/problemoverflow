@@ -245,6 +245,61 @@ check("parent in another room is refused", () => {
   assert.equal(sneaky.ok, false);
 });
 
+check("people can open a public topic room", () => {
+  const board = boardLib.emptyBoard();
+  const unsigned = boardLib.createTopicRoom(board, { name: "Agents" }, now);
+  assert.equal(unsigned.ok, false);
+  const made = boardLib.createTopicRoom(board, { name: "Agents", blurb: "Public topic for agents.", userId: "u-ada" }, now);
+  assert.equal(made.ok, true);
+  assert.equal(made.channel.kind, "topic");
+  assert.equal(made.channel.visibility, "public");
+  assert.notEqual(made.channel.id, "public");
+  assert.notEqual(made.channel.id, "video");
+  const reserved = boardLib.createTopicRoom(board, { name: "Video", userId: "u-ada" }, now);
+  assert.equal(reserved.ok, true);
+  assert.notEqual(reserved.channel.id, "video");
+  const leak = boardLib.createTopicRoom(board, { name: "password dump", userId: "u-ada" }, now);
+  assert.equal(leak.ok, false);
+  boardLib.createTopicRoom(board, { name: "Third topic", userId: "u-ada" }, now);
+  const capped = boardLib.createTopicRoom(board, { name: "Fourth topic", userId: "u-ada" }, now);
+  assert.equal(capped.ok, false);
+  const xml = boardLib.publicSitemapXml(board, "https://problemoverflow.com");
+  assert.match(xml, new RegExp("/r/" + made.channel.id));
+  assert.doesNotMatch(xml, /\/r\/video</);
+  assert.doesNotMatch(xml, /\/r\/public</);
+  const posted = boardLib.addCard(board, {
+    channelId: made.channel.id,
+    title: "Need a topic stuck thing",
+    pointA: "I am on the first side of a topic problem.",
+    pointB: "I want a second side a stranger can help with.",
+    obstacle: "The house Public room is too mixed for this.",
+    authorName: "Ada",
+  }, now);
+  assert.equal(posted.ok, true);
+  const child = boardLib.addCard(board, {
+    channelId: made.channel.id,
+    parentId: posted.card.id,
+    title: "Need the first topic substep",
+    pointA: "The bigger topic problem is still open.",
+    pointB: "This smaller step should sit under it.",
+    obstacle: "A flat list hides which problems belong together.",
+    authorName: "Ben",
+  }, now);
+  assert.equal(child.ok, true);
+  const answer = boardLib.addReply(board, {
+    channelId: made.channel.id,
+    cardId: posted.card.id,
+    note: "Here is a real short answer for the topic.",
+    authorName: "Ned",
+  }, now);
+  assert.equal(answer.ok, true);
+  const view = boardLib.publicSystemView(board, posted.card);
+  assert.equal(view.channelId, made.channel.id);
+  assert.equal(view.children[0].id, child.card.id);
+  assert.equal(view.answers[0].note, "Here is a real short answer for the topic.");
+  assert.ok(boardLib.publicCard(board, posted.card.id));
+});
+
 check("clarifying answers can be voted after they exist", () => {
   const board = boardLib.emptyBoard();
   const added = boardLib.addCard(board, {
@@ -953,6 +1008,8 @@ check("public board ships robots, a sitemap, and our Buzz hallway", () => {
   assert.match(llms, /POST \/api\/register/);
   assert.match(llms, /POST \/api\/cards/);
   assert.match(llms, /parentId/);
+  assert.match(llms, /POST \/api\/rooms/);
+  assert.match(llms, /\/r\//);
   assert.match(llms, /POST \/api\/reply/);
   assert.match(llms, /Origin: https:\/\/problemoverflow.com/);
   assert.match(llms, /problemoverflow.communities.buzz.xyz/);
@@ -1321,6 +1378,118 @@ async function liveHttpChecks() {
     assert.match(llms.body, /\/api\/board/);
     assert.match(llms.body, /\/p\//);
     assert.match(llms.body, /POST \/api\/cards/);
+    assert.match(llms.body, /POST \/api\/rooms/);
+    assert.match(llms.body, /\/r\//);
+
+    const unsignedRoom = await rawReq(port, {
+      method: "POST",
+      path: "/api/rooms",
+      headers: {
+        Origin: "https://problemoverflow.com",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ name: "Agents" }),
+    });
+    assert.equal(unsignedRoom.status, 401);
+
+    const topic = await rawReq(port, {
+      method: "POST",
+      path: "/api/rooms",
+      headers: {
+        Origin: "https://problemoverflow.com",
+        "Content-Type": "application/json",
+        Cookie: `po_session=${session}`,
+      },
+      body: JSON.stringify({ name: "Agents", blurb: "Public topic for agents." }),
+    });
+    const topicBody = JSON.parse(topic.body);
+    assert.equal(topic.status, 200, topic.body);
+    assert.equal(topicBody.ok, true);
+    const topicId = topicBody.channel.id;
+
+    const roomPage = await rawReq(port, { path: `/r/${topicId}` });
+    assert.equal(roomPage.status, 200);
+    assert.match(roomPage.body, /Agents/);
+    assert.match(roomPage.body, /<noscript>/);
+
+    const houseRoom = await rawReq(port, { path: "/r/public" });
+    assert.equal(houseRoom.status, 404);
+    const closedRoom = await rawReq(port, { path: "/r/video" });
+    assert.equal(closedRoom.status, 404);
+
+    const topicPost = await rawReq(port, {
+      method: "POST",
+      path: "/api/cards",
+      headers: {
+        Origin: "https://problemoverflow.com",
+        "Content-Type": "application/json",
+        Cookie: `po_session=${session}`,
+      },
+      body: JSON.stringify({
+        channelId: topicId,
+        title: "Need a topic stuck thing",
+        pointA: "I am on the first side of a topic problem.",
+        pointB: "I want a second side a stranger can help with.",
+        obstacle: "The house Public room is too mixed for this.",
+      }),
+    });
+    const topicPostBody = JSON.parse(topicPost.body);
+    assert.equal(topicPost.status, 200, topicPost.body);
+    const topicCardId = topicPostBody.card.id;
+
+    const childPost = await rawReq(port, {
+      method: "POST",
+      path: "/api/cards",
+      headers: {
+        Origin: "https://problemoverflow.com",
+        "Content-Type": "application/json",
+        Cookie: `po_session=${session}`,
+      },
+      body: JSON.stringify({
+        channelId: topicId,
+        parentId: topicCardId,
+        title: "Need the first topic substep",
+        pointA: "The bigger topic problem is still open.",
+        pointB: "This smaller step should sit under it.",
+        obstacle: "A flat list hides which problems belong together.",
+      }),
+    });
+    assert.equal(JSON.parse(childPost.body).ok, true, childPost.body);
+
+    const reply = await rawReq(port, {
+      method: "POST",
+      path: "/api/reply",
+      headers: {
+        Origin: "https://problemoverflow.com",
+        "Content-Type": "application/json",
+        Cookie: `po_session=${session}`,
+      },
+      body: JSON.stringify({
+        channelId: topicId,
+        cardId: topicCardId,
+        note: "Here is a real short answer for the topic.",
+      }),
+    });
+    assert.equal(JSON.parse(reply.body).ok, true, reply.body);
+
+    const sys = await rawReq(port, { path: `/api/card?id=${topicCardId}` });
+    const sysBody = JSON.parse(sys.body);
+    assert.equal(sys.status, 200);
+    assert.equal(sysBody.channelId, topicId);
+    assert.equal(sysBody.answers[0].note, "Here is a real short answer for the topic.");
+    assert.equal(sysBody.children.length, 1);
+
+    const sysPage = await rawReq(port, { path: `/p/${topicCardId}` });
+    assert.equal(sysPage.status, 200);
+    assert.match(sysPage.body, /<h2>Answers<\/h2>/);
+    assert.match(sysPage.body, /Here is a real short answer for the topic/);
+    assert.match(sysPage.body, /<h2>Substeps<\/h2>/);
+    assert.match(sysPage.body, /acceptedAnswer/);
+
+    const mapTopics = await rawReq(port, { path: "/sitemap.xml" });
+    assert.match(mapTopics.body, new RegExp(`/r/${topicId}`));
+    assert.match(mapTopics.body, new RegExp(`/p/${topicCardId}`));
+    assert.doesNotMatch(mapTopics.body, /\/r\/video</);
   });
 
   await withBoard({ PO_DATA_DIR: dir }, async ({ port }) => {

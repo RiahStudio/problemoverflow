@@ -64,6 +64,21 @@
       </div>
     </form>
   </dialog>
+  <dialog id="topic-box" aria-labelledby="topic-title">
+    <form id="topic-form">
+      <h2 id="topic-title">New topic</h2>
+      <label for="topic-name">Name
+        <input id="topic-name" name="name" required minlength="2" maxlength="40" placeholder="A short topic">
+      </label>
+      <label for="topic-blurb">What this room is for
+        <input id="topic-blurb" name="blurb" maxlength="120" placeholder="Optional">
+      </label>
+      <div class="auth-actions">
+        <button class="btn btn-ask" type="submit">Open topic</button>
+        <button class="btn btn-ghost" type="button" id="topic-cancel">Close</button>
+      </div>
+    </form>
+  </dialog>
   <div class="shell">
     <nav class="rooms" id="rooms" aria-label="Rooms"></nav>
     <main>

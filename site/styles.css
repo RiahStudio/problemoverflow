@@ -106,7 +106,7 @@ a:hover { color: var(--color-accent); text-decoration: underline; }
 
 #who-label { font-size: var(--text-sm); color: var(--color-ink-2); }
 
-#auth-box {
+#auth-box, #topic-box {
   border: var(--rule-hair) solid var(--color-rule);
   border-radius: var(--radius-card);
   padding: var(--space-md);
@@ -116,18 +116,18 @@ a:hover { color: var(--color-accent); text-decoration: underline; }
   box-shadow: var(--shadow-card);
 }
 
-#auth-box::backdrop {
+#auth-box::backdrop, #topic-box::backdrop {
   background: color-mix(in oklch, var(--color-ink) 40%, transparent);
 }
 
-#auth-box h2 {
+#auth-box h2, #topic-box h2 {
   margin: 0 0 var(--space-xs);
   font: 600 var(--text-md) / 1.2 var(--font-display);
   font-style: normal;
 }
 
-#auth-form { display: grid; gap: var(--space-xs); }
-#auth-form label { display: grid; gap: var(--space-3xs); font-size: var(--text-sm); font-weight: 600; }
+#auth-form, #topic-form { display: grid; gap: var(--space-xs); }
+#auth-form label, #topic-form label { display: grid; gap: var(--space-3xs); font-size: var(--text-sm); font-weight: 600; }
 .auth-actions { display: flex; flex-wrap: wrap; gap: var(--space-2xs); margin-top: var(--space-3xs); }
 .auth-or { margin: var(--space-3xs) 0 0; text-align: center; color: var(--color-muted); font-size: var(--text-sm); }
 
@@ -195,7 +195,8 @@ a:hover { color: var(--color-accent); text-decoration: underline; }
 .who input, .who select,
 .composer input, .composer textarea, .composer select,
 .ask-box textarea, .answer-box textarea, .reply-box textarea,
-#auth-form input, #auth-form select {
+#auth-form input, #auth-form select,
+#topic-form input {
   background: var(--color-paper-2);
   border: var(--rule-hair) solid var(--color-rule);
   color: var(--color-ink);
@@ -261,6 +262,10 @@ select:disabled {
   color: var(--color-ink);
   background: var(--color-paper-2);
   box-shadow: inset var(--rule-fine) 0 0 var(--color-accent), var(--shadow-card);
+}
+
+.room-new {
+  color: var(--color-accent);
 }
 
 .room .lock {

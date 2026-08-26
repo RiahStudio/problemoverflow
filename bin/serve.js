@@ -225,13 +225,44 @@ function clipMeta(s) {
   return String(s || "").replace(/\s+/g, " ").trim().slice(0, 160);
 }
 
-function noscriptCard(card, url) {
+function noscriptCard(card, url, view) {
   const bits = [`<article>`, `<h1>${escapeHtml(card.title)}</h1>`];
+  if (view && view.channelName) {
+    bits.push(`<p>Topic: ${escapeHtml(view.channelName)}</p>`);
+  }
+  if (view && view.parent) {
+    bits.push(`<p>Part of <a href="/p/${escapeHtml(view.parent.id)}">${escapeHtml(view.parent.title)}</a></p>`);
+  }
   for (const field of ["pointA", "pointB", "obstacle", "ask"]) {
     if (card[field]) bits.push(`<p>${escapeHtml(card[field])}</p>`);
   }
+  bits.push(`<h2>Answers</h2>`);
+  if (view && view.answers && view.answers.length) {
+    bits.push("<ol>");
+    for (const ans of view.answers) {
+      bits.push(`<li>${escapeHtml(ans.note || "")}</li>`);
+    }
+    bits.push("</ol>");
+  } else {
+    bits.push(`<p>No answers yet.</p>`);
+  }
+  if (view && view.children && view.children.length) {
+    bits.push(`<h2>Substeps</h2>`, "<ol>");
+    for (const child of view.children) {
+      bits.push(`<li><a href="/p/${escapeHtml(child.id)}">${escapeHtml(child.title)}</a></li>`);
+    }
+    bits.push("</ol>");
+  }
   bits.push(`<p><a href="${escapeHtml(url)}">${escapeHtml(url)}</a></p>`, `</article>`);
   return `<noscript>${bits.join("")}</noscript>`;
+}
+
+function noscriptRoom(channel, problems, origin) {
+  const items = problems.slice(0, 50).map((c) => {
+    const url = boardLib.publicPermalink(origin, c.id);
+    return `<li><a href="${escapeHtml(url)}">${escapeHtml(c.title)}</a></li>`;
+  }).join("");
+  return `<noscript><h1>${escapeHtml(channel.name)}</h1><p>${escapeHtml(channel.blurb || "")}</p><ol>${items}</ol></noscript>`;
 }
 
 function noscriptHome(problems, origin) {
@@ -242,7 +273,9 @@ function noscriptHome(problems, origin) {
   return `<noscript><h1>Problem Overflow</h1><ol>${items}</ol></noscript>`;
 }
 
-function serveIndex(res, cardId) {
+function serveIndex(res, opts) {
+  const cardId = (opts && opts.cardId) || "";
+  const roomId = (opts && opts.roomId) || "";
   const filePath = path.join(SITE, "index.html");
   fs.readFile(filePath, "utf8", (err, html) => {
     if (err) {
@@ -253,8 +286,14 @@ function serveIndex(res, cardId) {
     const origin = String(ORIGIN || "").replace(/\/$/, "");
     let out = html;
     const card = cardId ? boardLib.publicCard(board, cardId) : null;
+    const room = roomId ? boardLib.findChannel(board, roomId) : null;
+    if (roomId && (!room || room.visibility !== "public" || room.kind !== "topic")) {
+      send(res, 404, "Not found");
+      return;
+    }
     if (card && origin) {
       const url = boardLib.publicPermalink(origin, card.id);
+      const view = boardLib.publicSystemView(board, card);
       const desc = escapeHtml(clipMeta(card.pointA));
       const title = `${escapeHtml(card.title)} · Problem Overflow`;
       out = out
@@ -266,6 +305,7 @@ function serveIndex(res, cardId) {
         .replace(/<meta property="og:description" content="[^"]*">/, `<meta property="og:description" content="${desc}">`)
         .replace(/<meta name="twitter:title" content="[^"]*">/, `<meta name="twitter:title" content="${title}">`)
         .replace(/<meta name="twitter:description" content="[^"]*">/, `<meta name="twitter:description" content="${desc}">`);
+      const topAnswer = view && view.answers && view.answers[0];
       const ld = {
         "@context": "https://schema.org",
         "@type": "QAPage",
@@ -275,11 +315,41 @@ function serveIndex(res, cardId) {
           "@type": "Question",
           name: card.title,
           text: [card.pointA, card.obstacle].filter(Boolean).join(" "),
+          acceptedAnswer: topAnswer ? { "@type": "Answer", text: topAnswer.note } : undefined,
         },
       };
       out = out.replace("</head>", `<script type="application/ld+json">${JSON.stringify(ld).replace(/</g, "\\u003c")}</script></head>`);
-      out = out.replace("</body>", `${noscriptCard(card, url)}</body>`);
-    } else if (!cardId && origin) {
+      out = out.replace("</body>", `${noscriptCard(card, url, view)}</body>`);
+    } else if (room && origin) {
+      const problems = boardLib.publicProblems(board).filter((c) => c.channel === room.id);
+      const url = boardLib.publicRoomPermalink(origin, room.id);
+      const desc = escapeHtml(clipMeta(room.blurb || room.name));
+      const title = `${escapeHtml(room.name)} · Problem Overflow`;
+      out = out
+        .replace(/<title>[^<]*<\/title>/, `<title>${title}</title>`)
+        .replace(/<link rel="canonical" href="[^"]*">/, `<link rel="canonical" href="${url}">`)
+        .replace(/<meta name="description" content="[^"]*">/, `<meta name="description" content="${desc}">`)
+        .replace(/<meta property="og:url" content="[^"]*">/, `<meta property="og:url" content="${url}">`)
+        .replace(/<meta property="og:title" content="[^"]*">/, `<meta property="og:title" content="${title}">`)
+        .replace(/<meta property="og:description" content="[^"]*">/, `<meta property="og:description" content="${desc}">`)
+        .replace(/<meta name="twitter:title" content="[^"]*">/, `<meta name="twitter:title" content="${title}">`)
+        .replace(/<meta name="twitter:description" content="[^"]*">/, `<meta name="twitter:description" content="${desc}">`);
+      if (problems.length) {
+        const ld = {
+          "@context": "https://schema.org",
+          "@type": "ItemList",
+          name: room.name,
+          itemListElement: problems.slice(0, 50).map((c, i) => ({
+            "@type": "ListItem",
+            position: i + 1,
+            url: boardLib.publicPermalink(origin, c.id),
+            name: c.title,
+          })),
+        };
+        out = out.replace("</head>", `<script type="application/ld+json">${JSON.stringify(ld).replace(/</g, "\\u003c")}</script></head>`);
+      }
+      out = out.replace("</body>", `${noscriptRoom(room, problems, origin)}</body>`);
+    } else if (!cardId && !roomId && origin) {
       const problems = boardLib.publicProblems(board);
       if (problems.length) {
         const ld = {
@@ -481,15 +551,22 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/api/card") {
       const rec = currentRecord(req);
       const role = rec ? rec.role : (url.searchParams.get("role") === "agent" ? "agent" : "human");
-      const card = boardLib.publicCard(loadBoard(), url.searchParams.get("id") || "");
+      const board = loadBoard();
+      const card = boardLib.publicCard(board, url.searchParams.get("id") || "");
       if (!card) {
         json(res, { ok: false, error: "That problem is not on the public board." }, 404);
         return;
       }
+      const view = boardLib.publicSystemView(board, card) || {};
       json(res, {
         ok: true,
         card: boardLib.stripForViewer(card, role),
         url: boardLib.publicPermalink(ORIGIN, card.id),
+        channelId: view.channelId || card.channel,
+        channelName: view.channelName || "",
+        parent: view.parent || null,
+        children: view.children || [],
+        answers: view.answers || [],
       });
       return;
     }
@@ -562,6 +639,17 @@ const server = http.createServer(async (req, res) => {
       const body = asAuthor(JSON.parse((await readBody(req)) || "{}"), user);
       const board = loadBoard();
       const result = boardLib.addCard(board, body, Date.now());
+      if (result.ok) saveBoard(board);
+      json(res, result, result.ok ? 200 : 400);
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/rooms") {
+      const user = needUser(req, res);
+      if (!user) return;
+      const body = asAuthor(JSON.parse((await readBody(req)) || "{}"), user);
+      const board = loadBoard();
+      const result = boardLib.createTopicRoom(board, body, Date.now());
       if (result.ok) saveBoard(board);
       json(res, result, result.ok ? 200 : 400);
       return;
@@ -685,8 +773,12 @@ const server = http.createServer(async (req, res) => {
     }
 
     const cardPath = url.pathname.match(/^\/p\/([A-Za-z0-9._-]+)$/);
-    if (req.method === "GET" && (url.pathname === "/" || url.pathname === "/index.html" || cardPath)) {
-      serveIndex(res, cardPath ? cardPath[1] : "");
+    const roomPath = url.pathname.match(/^\/r\/([A-Za-z0-9._-]+)$/);
+    if (req.method === "GET" && (url.pathname === "/" || url.pathname === "/index.html" || cardPath || roomPath)) {
+      serveIndex(res, {
+        cardId: cardPath ? cardPath[1] : "",
+        roomId: roomPath ? roomPath[1] : "",
+      });
       return;
     }
 
