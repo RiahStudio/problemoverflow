@@ -814,14 +814,70 @@ check("public board ships robots, a sitemap, and our Buzz hallway", () => {
   const html = fs.readFileSync(path.join(site, "index.html"), "utf8");
   const robots = fs.readFileSync(path.join(site, "robots.txt"), "utf8");
   const map = fs.readFileSync(path.join(site, "sitemap.xml"), "utf8");
+  const llms = fs.readFileSync(path.join(site, "llms.txt"), "utf8");
+  const app = fs.readFileSync(path.join(site, "app.js"), "utf8");
   assert.match(robots, /Sitemap: https:\/\/problemoverflow.com\/sitemap.xml/);
   assert.match(map, /https:\/\/problemoverflow.com\//);
   assert.match(html, /rel="canonical"/);
+  assert.match(html, /href="\/llms\.txt"/);
+  assert.match(html, /href="\/styles\.css"/);
+  assert.match(html, /src="\/app\.js"/);
   assert.match(html, /href="https:\/\/problemoverflow.communities.buzz.xyz"/);
   assert.doesNotMatch(html, /href="https:\/\/buzz\.xyz"/);
+  assert.match(llms, /\/api\/board/);
+  assert.match(llms, /\/api\/card/);
+  assert.match(llms, /\/p\//);
+  assert.match(llms, /problemoverflow.communities.buzz.xyz/);
+  assert.match(llms, /https:\/\/problemoverflow.com\/#\/public/);
+  assert.doesNotMatch(llms, /C:\\/);
+  assert.doesNotMatch(llms, /\.env/);
+  assert.doesNotMatch(llms, /Cowork/);
+  assert.match(app, /\/p\/" \+ encodeURIComponent/);
   const serve = fs.readFileSync(path.join(__dirname, "serve.js"), "utf8");
   assert.match(serve, /"\.xml"/);
+  assert.match(serve, /serveIndex/);
+  assert.match(serve, /\/api\/card/);
+  assert.match(serve, /publicSitemapXml/);
   assert.match(serve, /startHourly\(ROOT, loadBoard, saveBoard, DATA_DIR\)/);
+});
+
+check("public problems have real pages; private rooms do not", () => {
+  const board = boardLib.emptyBoard();
+  const pub = boardLib.addCard(board, {
+    channelId: "public",
+    title: "Need a shared object",
+    pointA: "A friend and I want help without opening the shop.",
+    pointB: "We only exchange problems on a shared card.",
+    obstacle: "There is no shared object on the public board yet.",
+    authorName: "Ada",
+  }, now);
+  const priv = boardLib.addCard(board, {
+    channelId: "chiang-mai-ai",
+    joinKey: "cm-4c-nimman-7k2q",
+    title: "Private room card only",
+    pointA: "This should stay in the private room forever.",
+    pointB: "Search should never list this problem at all.",
+    obstacle: "A public sitemap would leak the private room.",
+    authorName: "Ada",
+  }, now);
+  assert.equal(pub.ok, true);
+  assert.equal(priv.ok, true);
+  assert.ok(boardLib.publicCard(board, pub.card.id));
+  assert.equal(boardLib.publicCard(board, priv.card.id), null);
+  assert.equal(
+    boardLib.publicPermalink("https://problemoverflow.com", pub.card.id),
+    "https://problemoverflow.com/p/" + pub.card.id,
+  );
+  const xml = boardLib.publicSitemapXml(board, "https://problemoverflow.com");
+  assert.match(xml, new RegExp("/p/" + pub.card.id));
+  assert.doesNotMatch(xml, new RegExp(priv.card.id));
+  const copy = boardLib.copyBuzz(board, {
+    channelId: "public",
+    cardId: pub.card.id,
+    publicOrigin: "https://problemoverflow.com/#/public",
+  });
+  assert.equal(copy.ok, true);
+  assert.equal(copy.text.trim().split(/\n/).pop(), "https://problemoverflow.com/#/public");
 });
 
 check("live config picks public bind, origin, and Secure cookies", () => {
@@ -1065,6 +1121,57 @@ async function liveHttpChecks() {
     assert.equal(pasteBody.ok, true, paste.body);
     const last = pasteBody.text.trim().split(/\n/).pop();
     assert.equal(last, "https://problemoverflow.com/#/public");
+
+    const page = await rawReq(port, { path: `/p/${cardId}` });
+    assert.equal(page.status, 200);
+    assert.match(page.body, /Need a shared object/);
+    assert.match(page.body, /application\/ld\+json/);
+    assert.match(page.body, new RegExp(`/p/${cardId}`));
+
+    const one = await rawReq(port, { path: `/api/card?id=${cardId}` });
+    const oneBody = JSON.parse(one.body);
+    assert.equal(one.status, 200);
+    assert.equal(oneBody.ok, true);
+    assert.equal(oneBody.card.title, cardTitle);
+    assert.equal(oneBody.url, `https://problemoverflow.com/p/${cardId}`);
+
+    const missing = await rawReq(port, { path: "/api/card?id=no-such-card" });
+    assert.equal(missing.status, 404);
+
+    const privatePost = await rawReq(port, {
+      method: "POST",
+      path: "/api/cards",
+      headers: {
+        Origin: "https://problemoverflow.com",
+        "Content-Type": "application/json",
+        Cookie: `po_session=${session}`,
+      },
+      body: JSON.stringify({
+        channelId: "chiang-mai-ai",
+        joinKey: "cm-4c-nimman-7k2q",
+        title: "Private room card only",
+        pointA: "This should stay in the private room forever.",
+        pointB: "Search should never list this problem at all.",
+        obstacle: "A public sitemap would leak the private room.",
+      }),
+    });
+    const privateBody = JSON.parse(privatePost.body);
+    assert.equal(privatePost.status, 200, privatePost.body);
+    assert.equal(privateBody.ok, true);
+    const privateId = privateBody.card.id;
+
+    const mapLive = await rawReq(port, { path: "/sitemap.xml" });
+    assert.equal(mapLive.status, 200);
+    assert.match(mapLive.body, new RegExp(`/p/${cardId}`));
+    assert.doesNotMatch(mapLive.body, new RegExp(privateId));
+
+    const secret = await rawReq(port, { path: `/api/card?id=${privateId}` });
+    assert.equal(secret.status, 404);
+
+    const llms = await rawReq(port, { path: "/llms.txt" });
+    assert.equal(llms.status, 200);
+    assert.match(llms.body, /\/api\/board/);
+    assert.match(llms.body, /\/p\//);
   });
 
   await withBoard({ PO_DATA_DIR: dir }, async ({ port }) => {

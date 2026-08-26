@@ -213,6 +213,75 @@ function serveFile(res, filePath) {
   });
 }
 
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function clipMeta(s) {
+  return String(s || "").replace(/\s+/g, " ").trim().slice(0, 160);
+}
+
+function serveIndex(res, cardId) {
+  const filePath = path.join(SITE, "index.html");
+  fs.readFile(filePath, "utf8", (err, html) => {
+    if (err) {
+      send(res, 404, "Not found");
+      return;
+    }
+    const board = loadBoard();
+    const origin = String(ORIGIN || "").replace(/\/$/, "");
+    let out = html;
+    const card = cardId ? boardLib.publicCard(board, cardId) : null;
+    if (card && origin) {
+      const url = boardLib.publicPermalink(origin, card.id);
+      const desc = escapeHtml(clipMeta(card.pointA));
+      const title = `${escapeHtml(card.title)} · Problem Overflow`;
+      out = out
+        .replace(/<title>[^<]*<\/title>/, `<title>${title}</title>`)
+        .replace(/<link rel="canonical" href="[^"]*">/, `<link rel="canonical" href="${url}">`)
+        .replace(/<meta name="description" content="[^"]*">/, `<meta name="description" content="${desc}">`)
+        .replace(/<meta property="og:url" content="[^"]*">/, `<meta property="og:url" content="${url}">`)
+        .replace(/<meta property="og:title" content="[^"]*">/, `<meta property="og:title" content="${title}">`)
+        .replace(/<meta property="og:description" content="[^"]*">/, `<meta property="og:description" content="${desc}">`)
+        .replace(/<meta name="twitter:title" content="[^"]*">/, `<meta name="twitter:title" content="${title}">`)
+        .replace(/<meta name="twitter:description" content="[^"]*">/, `<meta name="twitter:description" content="${desc}">`);
+      const ld = {
+        "@context": "https://schema.org",
+        "@type": "QAPage",
+        name: card.title,
+        url,
+        mainEntity: {
+          "@type": "Question",
+          name: card.title,
+          text: [card.pointA, card.obstacle].filter(Boolean).join(" "),
+        },
+      };
+      out = out.replace("</head>", `<script type="application/ld+json">${JSON.stringify(ld).replace(/</g, "\\u003c")}</script></head>`);
+    } else if (!cardId && origin) {
+      const problems = boardLib.publicProblems(board);
+      if (problems.length) {
+        const ld = {
+          "@context": "https://schema.org",
+          "@type": "ItemList",
+          name: "Problem Overflow",
+          itemListElement: problems.slice(0, 50).map((c, i) => ({
+            "@type": "ListItem",
+            position: i + 1,
+            url: boardLib.publicPermalink(origin, c.id),
+            name: c.title,
+          })),
+        };
+        out = out.replace("</head>", `<script type="application/ld+json">${JSON.stringify(ld).replace(/</g, "\\u003c")}</script></head>`);
+      }
+    }
+    send(res, 200, out, "text/html; charset=utf-8");
+  });
+}
+
 function rememberRoom(req, channelId, joinKey) {
   const accounts = loadAccounts();
   const user = authLib.userRecordFromSession(accounts, sessionId(req), Date.now());
@@ -387,6 +456,22 @@ const server = http.createServer(async (req, res) => {
       );
       if (snap.ok && rec) rememberRoom(req, channelId, joinKey);
       json(res, snap, snap.ok ? 200 : 403);
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/card") {
+      const rec = currentRecord(req);
+      const role = rec ? rec.role : (url.searchParams.get("role") === "agent" ? "agent" : "human");
+      const card = boardLib.publicCard(loadBoard(), url.searchParams.get("id") || "");
+      if (!card) {
+        json(res, { ok: false, error: "That problem is not on the public board." }, 404);
+        return;
+      }
+      json(res, {
+        ok: true,
+        card: boardLib.stripForViewer(card, role),
+        url: boardLib.publicPermalink(ORIGIN, card.id),
+      });
       return;
     }
 
@@ -567,6 +652,17 @@ const server = http.createServer(async (req, res) => {
       const result = boardLib.addVote(board, body, Date.now());
       if (result.ok) saveBoard(board);
       json(res, result, result.ok ? 200 : 400);
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/sitemap.xml") {
+      send(res, 200, boardLib.publicSitemapXml(loadBoard(), ORIGIN), "application/xml; charset=utf-8");
+      return;
+    }
+
+    const cardPath = url.pathname.match(/^\/p\/([A-Za-z0-9._-]+)$/);
+    if (req.method === "GET" && (url.pathname === "/" || url.pathname === "/index.html" || cardPath)) {
+      serveIndex(res, cardPath ? cardPath[1] : "");
       return;
     }
 

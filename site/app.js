@@ -86,11 +86,25 @@
     return q ? `#/${channelId}?${q}` : `#/${channelId}`;
   }
 
+  function cardIdFromPath() {
+    const m = String(location.pathname || "").match(/^\/p\/([A-Za-z0-9._-]+)$/);
+    return m ? m[1] : "";
+  }
+
+  function pagePath() {
+    if (channelIsPublic(state.channelId) && state.cardId) {
+      return "/p/" + encodeURIComponent(state.cardId);
+    }
+    return "/";
+  }
+
   function writeHash() {
-    const next = hashFromState();
-    const cur = location.hash || "#/public";
-    if (cur === next) return;
-    history.replaceState(null, "", location.pathname + location.search + next);
+    const hideCardInHash = channelIsPublic(state.channelId) && state.cardId;
+    const next = hashFromState({ card: hideCardInHash ? "" : state.cardId });
+    const dest = pagePath() + location.search + next;
+    const cur = location.pathname + location.search + (location.hash || "#/public");
+    if (cur === dest) return;
+    history.replaceState(null, "", dest);
   }
 
   function parseHash() {
@@ -100,9 +114,16 @@
     const channelId = path || "public";
     const key = params.get("k") || storedKey(channelId);
     if (params.get("k")) rememberKey(channelId, params.get("k"));
-    state.channelId = channelId;
-    state.joinKey = key;
-    state.cardId = params.get("c") || "";
+    const pathCard = cardIdFromPath();
+    if (pathCard && (channelId === "public" || channelIsPublic(channelId))) {
+      state.channelId = "public";
+      state.joinKey = storedKey("public");
+      state.cardId = params.get("c") || pathCard;
+    } else {
+      state.channelId = channelId;
+      state.joinKey = key;
+      state.cardId = params.get("c") || "";
+    }
     state.tagFilter = params.get("tag") || "";
     const sort = params.get("sort");
     state.sort = SORTS.includes(sort) ? sort : "live";
@@ -132,6 +153,9 @@
   }
 
   function cardLink(id) {
+    if (channelIsPublic(state.channelId)) {
+      return location.origin + "/p/" + encodeURIComponent(id);
+    }
     return location.origin + hashFromState({ card: id, tag: "", sort: "live", range: "week" });
   }
 
@@ -654,6 +678,7 @@
       topRange.value = savedRange;
     }
     parseHash();
+    writeHash();
     const boot = await api("/api/boot");
     if (!boot.ok) {
       setStatus("The board is not up.", "bad");
@@ -1095,6 +1120,12 @@
   });
 
   window.addEventListener("hashchange", () => {
+    parseHash();
+    writeHash();
+    pingHere().then(loadBoard);
+  });
+
+  window.addEventListener("popstate", () => {
     parseHash();
     pingHere().then(loadBoard);
   });
