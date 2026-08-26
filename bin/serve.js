@@ -679,6 +679,11 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (req.method === "GET" && (url.pathname === "/feed.xml" || url.pathname === "/rss.xml")) {
+      send(res, 200, boardLib.publicRssXml(loadBoard(), ORIGIN), "application/rss+xml; charset=utf-8");
+      return;
+    }
+
     const cardPath = url.pathname.match(/^\/p\/([A-Za-z0-9._-]+)$/);
     if (req.method === "GET" && (url.pathname === "/" || url.pathname === "/index.html" || cardPath)) {
       serveIndex(res, cardPath ? cardPath[1] : "");

@@ -820,6 +820,7 @@ check("public board ships robots, a sitemap, and our Buzz hallway", () => {
   assert.match(map, /https:\/\/problemoverflow.com\//);
   assert.match(html, /rel="canonical"/);
   assert.match(html, /href="\/llms\.txt"/);
+  assert.match(html, /href="\/feed\.xml"/);
   assert.match(html, /href="\/styles\.css"/);
   assert.match(html, /src="\/app\.js"/);
   assert.match(html, /href="https:\/\/problemoverflow.communities.buzz.xyz"/);
@@ -827,6 +828,7 @@ check("public board ships robots, a sitemap, and our Buzz hallway", () => {
   assert.match(llms, /\/api\/board/);
   assert.match(llms, /\/api\/card/);
   assert.match(llms, /\/p\//);
+  assert.match(llms, /\/feed\.xml/);
   assert.match(llms, /problemoverflow.communities.buzz.xyz/);
   assert.match(llms, /https:\/\/problemoverflow.com\/#\/public/);
   assert.doesNotMatch(llms, /C:\\/);
@@ -838,6 +840,7 @@ check("public board ships robots, a sitemap, and our Buzz hallway", () => {
   assert.match(serve, /serveIndex/);
   assert.match(serve, /\/api\/card/);
   assert.match(serve, /publicSitemapXml/);
+  assert.match(serve, /publicRssXml/);
   assert.match(serve, /startHourly\(ROOT, loadBoard, saveBoard, DATA_DIR\)/);
 });
 
@@ -871,6 +874,11 @@ check("public problems have real pages; private rooms do not", () => {
   const xml = boardLib.publicSitemapXml(board, "https://problemoverflow.com");
   assert.match(xml, new RegExp("/p/" + pub.card.id));
   assert.doesNotMatch(xml, new RegExp(priv.card.id));
+  const rss = boardLib.publicRssXml(board, "https://problemoverflow.com");
+  assert.match(rss, new RegExp("/p/" + pub.card.id));
+  assert.match(rss, /Need a shared object/);
+  assert.doesNotMatch(rss, new RegExp(priv.card.id));
+  assert.doesNotMatch(rss, /Private room card only/);
   const copy = boardLib.copyBuzz(board, {
     channelId: "public",
     cardId: pub.card.id,
@@ -1171,6 +1179,13 @@ async function liveHttpChecks() {
     assert.equal(mapLive.status, 200);
     assert.match(mapLive.body, new RegExp(`/p/${cardId}`));
     assert.doesNotMatch(mapLive.body, new RegExp(privateId));
+
+    const feedLive = await rawReq(port, { path: "/feed.xml" });
+    assert.equal(feedLive.status, 200);
+    assert.match(feedLive.body, /<rss version="2.0">/);
+    assert.match(feedLive.body, new RegExp(`/p/${cardId}`));
+    assert.match(feedLive.body, /Need a shared object/);
+    assert.doesNotMatch(feedLive.body, new RegExp(privateId));
 
     const secret = await rawReq(port, { path: `/api/card?id=${privateId}` });
     assert.equal(secret.status, 404);
