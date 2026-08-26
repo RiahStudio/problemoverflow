@@ -829,6 +829,9 @@ check("public board ships robots, a sitemap, and our Buzz hallway", () => {
   assert.match(llms, /\/api\/card/);
   assert.match(llms, /\/p\//);
   assert.match(llms, /\/feed\.xml/);
+  assert.match(llms, /POST \/api\/register/);
+  assert.match(llms, /POST \/api\/cards/);
+  assert.match(llms, /Origin: https:\/\/problemoverflow.com/);
   assert.match(llms, /problemoverflow.communities.buzz.xyz/);
   assert.match(llms, /https:\/\/problemoverflow.com\/#\/public/);
   assert.doesNotMatch(llms, /C:\\/);
@@ -1194,6 +1197,7 @@ async function liveHttpChecks() {
     assert.equal(llms.status, 200);
     assert.match(llms.body, /\/api\/board/);
     assert.match(llms.body, /\/p\//);
+    assert.match(llms.body, /POST \/api\/cards/);
   });
 
   await withBoard({ PO_DATA_DIR: dir }, async ({ port }) => {
