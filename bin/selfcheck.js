@@ -173,6 +173,127 @@ check("wrong key cannot vote in a private room", () => {
   assert.equal(sneak.ok, false);
 });
 
+check("answers can be voted without lifting the parent", () => {
+  const board = boardLib.emptyBoard();
+  const parent = boardLib.addCard(board, {
+    channelId: "public",
+    title: "Need a public stuck thing",
+    pointA: "I am still on the first side of this problem.",
+    pointB: "I want a second side that a stranger can help with.",
+    obstacle: "There is no shared object on the public board yet.",
+    authorName: "Ada",
+  }, now);
+  assert.equal(parent.ok, true);
+  const child = boardLib.addCard(board, {
+    channelId: "public",
+    parentId: parent.card.id,
+    title: "Need the first substep done",
+    pointA: "The bigger stuck thing is still open.",
+    pointB: "This smaller step should sit under it.",
+    obstacle: "A flat list hides which problems belong together.",
+    authorName: "Ben",
+  }, now);
+  assert.equal(child.ok, true);
+  assert.equal(child.card.parentId, parent.card.id);
+  const answer = boardLib.addReply(board, {
+    channelId: "public",
+    cardId: parent.card.id,
+    note: "Here is a real short answer for it.",
+    authorName: "Ned",
+  }, now);
+  assert.equal(answer.ok, true);
+  assert.equal(answer.reply.kind, "answer");
+  const voted = boardLib.addVote(board, {
+    channelId: "public",
+    cardId: answer.reply.id,
+    voterId: "agent-one",
+    voterName: "Agent One",
+    role: "agent",
+  }, now);
+  assert.equal(voted.ok, true);
+  const snap = boardLib.snapshot(board, "public", "", now);
+  const row = snap.cards.find((r) => r.card.id === parent.card.id);
+  assert.equal(row.rank, 0);
+  assert.equal(row.replies.length, 1);
+  assert.equal(row.replies[0].rank, 3);
+  assert.ok(row.children.some((c) => c.id === child.card.id));
+  const nested = snap.cards.find((r) => r.card.id === child.card.id);
+  assert.equal(nested.parent.id, parent.card.id);
+});
+
+check("parent in another room is refused", () => {
+  const board = boardLib.emptyBoard();
+  const priv = boardLib.addCard(board, {
+    channelId: "video",
+    joinKey: "vid-cut-room-9m4w",
+    title: "Private video stuck thing",
+    pointA: "This card lives in the video room only.",
+    pointB: "A public card should not sit under it.",
+    obstacle: "A cross-room nest would leak the private room.",
+    authorName: "Cam",
+  }, now);
+  assert.equal(priv.ok, true);
+  const sneaky = boardLib.addCard(board, {
+    channelId: "public",
+    parentId: priv.card.id,
+    title: "Need a public nest sneak",
+    pointA: "I am trying to hang a public card under a private one.",
+    pointB: "The board should refuse that nest.",
+    obstacle: "A leaked parent would prove the private card was visible.",
+    authorName: "Sneak",
+  }, now);
+  assert.equal(sneaky.ok, false);
+});
+
+check("clarifying answers can be voted after they exist", () => {
+  const board = boardLib.emptyBoard();
+  const added = boardLib.addCard(board, {
+    channelId: "public",
+    title: "Need one clarifying question",
+    pointA: "Someone will ask what I actually mean by unstuck.",
+    pointB: "I could answer in one short line people can read.",
+    obstacle: "A novel in the human box would bury the stuck thing.",
+    authorName: "Zach",
+  }, now);
+  assert.equal(added.ok, true);
+  const asked = boardLib.addQuestion(board, {
+    channelId: "public",
+    cardId: added.card.id,
+    question: "What would unstuck look like this week?",
+    authorName: "Mina",
+  }, now);
+  assert.equal(asked.ok, true);
+  const tooSoon = boardLib.addVote(board, {
+    channelId: "public",
+    cardId: asked.question.id,
+    voterId: "agent-one",
+    voterName: "Agent One",
+    role: "agent",
+  }, now);
+  assert.equal(tooSoon.ok, false);
+  const answered = boardLib.addAnswer(board, {
+    channelId: "public",
+    cardId: added.card.id,
+    questionId: asked.question.id,
+    humanAnswer: "Five lines that sound like me, posted after I say yes.",
+    authorName: "Zach",
+  }, now);
+  assert.equal(answered.ok, true);
+  const voted = boardLib.addVote(board, {
+    channelId: "public",
+    cardId: asked.question.id,
+    voterId: "agent-one",
+    voterName: "Agent One",
+    role: "agent",
+  }, now);
+  assert.equal(voted.ok, true);
+  const snap = boardLib.snapshot(board, "public", "", now);
+  const row = snap.cards.find((r) => r.card.id === added.card.id);
+  const item = row.card.clarifications.find((q) => q.id === asked.question.id);
+  assert.equal(item.rank, 3);
+  assert.equal(row.rank, 0);
+});
+
 check("Buzz paste for localhost is the hallway line", () => {
   const url = boardLib.roomUrl("http://127.0.0.1:8146", "public", "");
   const blurb = boardLib.buzzBlurb({
@@ -596,7 +717,7 @@ check("hallway tally reranks from Buzz up and down", () => {
     ],
   }, now);
   assert.equal(first.ok, true);
-  const ranked = boardLib.ranked(board.cards.filter((c) => c.kind !== "reply"), board.votes, 0);
+  const ranked = boardLib.ranked(board.cards.filter((c) => !boardLib.isAnswerCard(c)), board.votes, 0);
   assert.equal(ranked[0].card.id, hot.card.id);
   assert.ok(ranked[0].rank > ranked[1].rank);
   const second = boardLib.applyBuzzTally(board, {
@@ -615,7 +736,7 @@ check("hallway tally reranks from Buzz up and down", () => {
   assert.equal(second.ok, true);
   const buzzVotes = board.votes.filter((v) => v.source === "buzz");
   assert.equal(buzzVotes.length, 2);
-  const reranked = boardLib.ranked(board.cards.filter((c) => c.kind !== "reply"), board.votes, 0);
+  const reranked = boardLib.ranked(board.cards.filter((c) => !boardLib.isAnswerCard(c)), board.votes, 0);
   assert.equal(reranked[0].card.id, cold.card.id);
 });
 
@@ -831,6 +952,8 @@ check("public board ships robots, a sitemap, and our Buzz hallway", () => {
   assert.match(llms, /\/feed\.xml/);
   assert.match(llms, /POST \/api\/register/);
   assert.match(llms, /POST \/api\/cards/);
+  assert.match(llms, /parentId/);
+  assert.match(llms, /POST \/api\/reply/);
   assert.match(llms, /Origin: https:\/\/problemoverflow.com/);
   assert.match(llms, /problemoverflow.communities.buzz.xyz/);
   assert.match(llms, /https:\/\/problemoverflow.com\/#\/public/);

@@ -193,7 +193,7 @@ a:hover { color: var(--color-accent); text-decoration: underline; }
 .side section[hidden] { display: none; }
 
 .who input, .who select,
-.composer input, .composer textarea,
+.composer input, .composer textarea, .composer select,
 .ask-box textarea, .answer-box textarea, .reply-box textarea,
 #auth-form input, #auth-form select {
   background: var(--color-paper-2);
@@ -611,7 +611,42 @@ form.ask-box { display: none; }
   border-radius: 0 var(--radius-input) var(--radius-input) 0;
 }
 
-.clarify, .replies { display: grid; gap: var(--space-2xs); margin-top: var(--space-2xs); }
+.clarify, .replies, .answers { display: grid; gap: var(--space-2xs); margin-top: var(--space-2xs); }
+
+.answers h3 {
+  margin: var(--space-xs) 0 0;
+  font: 600 var(--text-sm) / 1.2 var(--font-body);
+}
+
+.answer {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-2xs) var(--space-xs);
+  align-items: start;
+}
+
+.answer-row {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-2xs) var(--space-xs);
+  align-items: start;
+}
+
+.nest {
+  margin: 0 0 var(--space-2xs);
+  color: var(--color-muted);
+  font: 500 var(--text-sm) / 1.4 var(--font-body);
+}
+
+.nest-link {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--color-ink);
+  text-decoration: underline;
+  cursor: pointer;
+  font: inherit;
+}
 
 .clarify-item, .reply {
   border: 0;

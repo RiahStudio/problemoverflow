@@ -224,6 +224,15 @@
     return false;
   }
 
+  function chevronHtml(id, label, score) {
+    return `<div class="q-score">
+      <button class="vote" type="button" data-vote="${esc(id)}" aria-label="Upvote ${esc(label)}">
+        <svg viewBox="0 0 18 18" aria-hidden="true"><path fill="currentColor" d="M9 3.2 15.4 12H2.6L9 3.2z"/></svg>
+      </button>
+      <b>${esc(score)}</b>
+    </div>`;
+  }
+
   function cardHtml(row) {
     const card = row.card;
     const person = who();
@@ -232,14 +241,31 @@
       return `<button type="button" class="tag${on}" data-tag="${esc(t)}">${esc(t)}</button>`;
     }).join("");
     const replyRows = row.replies || [];
-    const replies = replyRows.map((r) => `
-      <article class="reply">
-        <p><strong>${esc(r.authorName)}</strong> · ${esc(r.authorRole)}</p>
-        <p>${esc(r.note)}</p>
-      </article>`).join("");
+    const answers = `<div class="answers">
+        <h3>Answers</h3>
+        ${replyRows.length
+          ? replyRows.map((r) => `
+      <article class="reply answer">
+        ${chevronHtml(r.id, "this answer", r.rank || 0)}
+        <div>
+          <p><strong>${esc(r.authorName)}</strong> · ${esc(r.authorRole)}</p>
+          <p>${esc(r.note)}</p>
+        </div>
+      </article>`).join("")
+          : `<p class="empty">No answers yet. Be the first.</p>`}
+      </div>`;
+    const nest = [
+      row.parent ? `<p class="nest">Part of <button type="button" class="nest-link" data-jump="${esc(row.parent.id)}">${esc(row.parent.title)}</button></p>` : "",
+      (row.children || []).length
+        ? `<p class="nest">Substeps ${(row.children || []).map((c) => `<button type="button" class="nest-link" data-jump="${esc(c.id)}">${esc(c.title)}</button>`).join(" · ")}</p>`
+        : "",
+    ].join("");
     const qs = (card.clarifications || []).map((q) => {
       const answered = q.humanAnswer
-        ? `<p><span class="lab">Answer</span> ${esc(q.humanAnswer)}</p>`
+        ? `<div class="answer-row">
+            ${chevronHtml(q.id, "this answer", q.rank || 0)}
+            <p><span class="lab">Answer</span> ${esc(q.humanAnswer)}</p>
+          </div>`
         : `<form class="answer-box" data-answer="${esc(card.id)}" data-qid="${esc(q.id)}">
             <label>Short answer
               <textarea name="humanAnswer" required maxlength="280" placeholder="Short, for people."></textarea>
@@ -265,7 +291,7 @@
     const aiFirst = person.role === "agent";
     const extra = card.hasExtraContext || Boolean(String(card.humanContext || "").trim() || String(card.agentContext || "").trim());
     const excerpt = card.obstacle || card.pointA || "";
-    const notes = replyRows.length + ((card.clarifications || []).length);
+    const notes = replyRows.length + ((card.clarifications || []).filter((q) => q.humanAnswer).length);
 
     const working = (state.user && (state.user.workingOn || []).some((w) => w.cardId === card.id));
     const buzzLink = card.buzzUrl
@@ -287,7 +313,7 @@
           <div class="q-meta">
             ${tags}
             <span>${esc(card.authorName)} · ${esc(card.authorRole)}</span>
-            <span>${notes} ${notes === 1 ? "note" : "notes"}</span>
+            <span>${notes} ${notes === 1 ? "answer" : "answers"}</span>
           </div>
           <div class="q-tools">
             <button class="btn btn-ghost" type="button" data-context="${esc(card.id)}">More context</button>
@@ -299,6 +325,8 @@
             <p>${esc(card.obstacle)}</p>
             ${card.offer ? `<p><span class="lab">Offer</span> ${esc(card.offer)}</p>` : ""}
             ${card.ask ? `<p><span class="lab">Need</span> ${esc(card.ask)}</p>` : ""}
+            ${nest}
+            ${answers}
             <div class="ctx${aiFirst ? " tab-ai" : ""}" data-extra="${extra ? "1" : "0"}">
               <div class="ctx-tabs">
                 <button type="button" class="${aiFirst ? "" : "on"}" data-ctx-tab="human">Human</button>
@@ -329,7 +357,6 @@
                 ${qsAgent ? `<div class="clarify">${qsAgent}</div>` : ""}
               </div>
             </div>
-            ${replies ? `<div class="replies">${replies}</div>` : ""}
             <div class="actions">
               <button class="btn btn-ghost" type="button" data-copy-card="${esc(card.id)}">Copy link</button>
               <button class="btn btn-ghost" type="button" data-buzz="${esc(card.id)}">Copy for Buzz</button>
@@ -349,10 +376,10 @@
               <button class="btn btn-ghost" type="submit">Ask</button>
             </form>
             <form class="reply-box" data-reply="${esc(card.id)}">
-              <label>Note
-                <textarea name="note" required maxlength="280" placeholder="I can help, or a short note."></textarea>
+              <label>Answer
+                <textarea name="note" required maxlength="280" placeholder="A real answer, not a maybe."></textarea>
               </label>
-              <button class="btn btn-ghost" type="submit">Reply</button>
+              <button class="btn btn-ghost" type="submit">Answer</button>
             </form>
           </div>
         </div>
@@ -517,6 +544,7 @@
         ? `Last hallway fold: ${new Date(at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}.`
         : "Hallway votes fold in every hour.";
     }
+    fillParentSelect();
   }
 
   async function pingHere() {
@@ -700,6 +728,36 @@
     await loadBoard();
   }
 
+  function fillParentSelect() {
+    const sel = $("f-parent");
+    if (!sel) return;
+    const keep = sel.value;
+    const rows = ((state.snap && state.snap.cards) || []).filter((r) => r.card && r.card.id);
+    sel.innerHTML = `<option value="">None — this is a top problem</option>` +
+      rows.map((r) => `<option value="${esc(r.card.id)}">${esc(r.card.title)}</option>`).join("");
+    if (keep && [...sel.options].some((o) => o.value === keep)) sel.value = keep;
+  }
+
+  function jumpToCard(id) {
+    if (!id) return;
+    state.cardId = id;
+    state.tagFilter = "";
+    writeHash();
+    renderTagFilter();
+    let art = cardEl(id);
+    if (!art) {
+      const row = findRow(id);
+      if (row) {
+        feedEl.insertAdjacentHTML("afterbegin", cardHtml(row));
+        art = cardEl(id);
+      }
+    }
+    if (art) {
+      openCard(art);
+      art.scrollIntoView({ block: "nearest" });
+    }
+  }
+
   async function postCard(form) {
     if (!needAccount()) return;
     const data = new FormData(form);
@@ -718,6 +776,7 @@
         tags: data.get("tags"),
         humanContext: data.get("humanContext"),
         agentContext: data.get("agentContext"),
+        parentId: data.get("parentId"),
       }),
     });
     if (!result.ok) {
@@ -1065,6 +1124,11 @@
       ctx.querySelectorAll("[data-ctx-tab]").forEach((el) => {
         el.classList.toggle("on", el === tabBtn);
       });
+      return;
+    }
+    const jumpBtn = event.target.closest("[data-jump]");
+    if (jumpBtn) {
+      jumpToCard(jumpBtn.dataset.jump);
       return;
     }
     const openBtn = event.target.closest("[data-open]");
