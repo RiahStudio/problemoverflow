@@ -194,7 +194,7 @@ a:hover { color: var(--color-accent); text-decoration: underline; }
 
 .who input, .who select,
 .composer input, .composer textarea, .composer select,
-.ask-box textarea, .answer-box textarea, .reply-box textarea,
+.ask-box textarea, .answer-box textarea, .reply-box textarea, .challenge-box textarea,
 #auth-form input, #auth-form select,
 #topic-form input {
   background: var(--color-paper-2);
@@ -488,6 +488,18 @@ main {
   letter-spacing: var(--tracking-display);
 }
 
+.q-main h2 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2xs);
+}
+
+.q-main h2 .q-title {
+  width: auto;
+  flex: 1 1 12rem;
+}
+
 .q-excerpt {
   margin: var(--space-2xs) 0 0;
   color: var(--color-ink-2);
@@ -531,6 +543,34 @@ main {
 .tag.on {
   background: color-mix(in oklch, var(--color-accent) 18%, var(--color-paper-3));
   color: var(--color-ink);
+}
+
+.challenge-badge {
+  display: inline-block;
+  background: color-mix(in oklch, var(--color-accent) 16%, var(--color-paper-3));
+  color: var(--color-ink);
+  border-radius: var(--radius-input);
+  padding: 0.15rem var(--space-2xs);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+.challenge-badge.closed {
+  background: var(--color-paper-3);
+  color: var(--color-muted);
+  font-weight: 500;
+}
+
+.challenge-line {
+  margin: var(--space-2xs) 0 0;
+  font-size: var(--text-sm);
+  color: var(--color-muted);
+}
+
+.hint {
+  margin: 0 0 var(--space-xs);
+  font-size: var(--text-sm);
+  color: var(--color-muted);
 }
 
 .tag-filter {
@@ -663,8 +703,8 @@ form.ask-box { display: none; }
 
 .reply p, .clarify-item p { margin: 0 0 var(--space-2xs); }
 .actions { display: flex; flex-wrap: wrap; gap: var(--space-2xs); margin-top: var(--space-2xs); }
-.ask-box, .reply-box, .answer-box { margin-top: var(--space-2xs); display: grid; gap: var(--space-2xs); }
-.ask-box textarea, .reply-box textarea, .answer-box textarea { min-height: 3.5rem; }
+.ask-box, .reply-box, .answer-box, .challenge-box { margin-top: var(--space-2xs); display: grid; gap: var(--space-2xs); }
+.ask-box textarea, .reply-box textarea, .answer-box textarea, .challenge-box textarea { min-height: 3.5rem; }
 
 .side {
   padding: var(--space-sm);

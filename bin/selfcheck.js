@@ -1000,6 +1000,8 @@ check("public board ships robots, a sitemap, and our Buzz hallway", () => {
   assert.match(html, /href="\/styles\.css"/);
   assert.match(html, /src="\/app\.js"/);
   assert.match(html, /href="https:\/\/problemoverflow.communities.buzz.xyz"/);
+  assert.match(html, /data-sort="challenge"/);
+  assert.match(html, /id="f-done"/);
   assert.doesNotMatch(html, /href="https:\/\/buzz\.xyz"/);
   assert.match(llms, /\/api\/board/);
   assert.match(llms, /\/api\/card/);
@@ -1008,7 +1010,9 @@ check("public board ships robots, a sitemap, and our Buzz hallway", () => {
   assert.match(llms, /POST \/api\/register/);
   assert.match(llms, /POST \/api\/cards/);
   assert.match(llms, /parentId/);
+  assert.match(llms, /doneWhen/);
   assert.match(llms, /POST \/api\/rooms/);
+  assert.match(llms, /POST \/api\/challenge/);
   assert.match(llms, /\/r\//);
   assert.match(llms, /POST \/api\/reply/);
   assert.match(llms, /Origin: https:\/\/problemoverflow.com/);
@@ -1022,6 +1026,8 @@ check("public board ships robots, a sitemap, and our Buzz hallway", () => {
   assert.match(serve, /"\.xml"/);
   assert.match(serve, /serveIndex/);
   assert.match(serve, /\/api\/card/);
+  assert.match(serve, /\/api\/challenge/);
+  assert.match(serve, /Done when/);
   assert.match(serve, /publicSitemapXml/);
   assert.match(serve, /publicRssXml/);
   assert.match(serve, /startHourly\(ROOT, loadBoard, saveBoard, DATA_DIR\)/);
@@ -1069,6 +1075,164 @@ check("public problems have real pages; private rooms do not", () => {
   });
   assert.equal(copy.ok, true);
   assert.equal(copy.text.trim().split(/\n/).pop(), "https://problemoverflow.com/#/public");
+});
+
+check("leaky or short done-when is refused", () => {
+  const board = boardLib.emptyBoard();
+  const leaky = boardLib.addCard(board, {
+    channelId: "public",
+    title: "Need a public try",
+    pointA: "I am still on the first side of this problem.",
+    pointB: "I want a second side a stranger can check.",
+    obstacle: "There is no shared object on the public board yet.",
+    authorName: "Ada",
+    authorId: "u-ada",
+    userId: "u-ada",
+    doneWhen: "Done when C:\\Users\\someone\\secret is gone.",
+  }, now);
+  assert.equal(leaky.ok, false);
+  const short = boardLib.addCard(board, {
+    channelId: "public",
+    title: "Need a public try",
+    pointA: "I am still on the first side of this problem.",
+    pointB: "I want a second side a stranger can check.",
+    obstacle: "There is no shared object on the public board yet.",
+    authorName: "Ada",
+    authorId: "u-ada",
+    userId: "u-ada",
+    doneWhen: "too short",
+  }, now);
+  assert.equal(short.ok, false);
+});
+
+check("a real done-when opens a seven-day challenge", () => {
+  const board = boardLib.emptyBoard();
+  const added = boardLib.addCard(board, {
+    channelId: "public",
+    title: "Need a public try",
+    pointA: "I am still on the first side of this problem.",
+    pointB: "I want a second side a stranger can check.",
+    obstacle: "There is no shared object on the public board yet.",
+    authorName: "Ada",
+    authorId: "u-ada",
+    userId: "u-ada",
+    doneWhen: "A stranger can see one open challenge on the public board.",
+    challengeDays: 7,
+  }, now);
+  assert.equal(added.ok, true);
+  assert.equal(added.card.challengeUntil, now + 7 * 24 * 60 * 60 * 1000);
+  const view = boardLib.challengeView(added.card, now);
+  assert.equal(view.open, true);
+  assert.equal(view.whoCanTry, "anyone");
+  const snap = boardLib.snapshot(board, "public", "", now);
+  assert.equal(snap.challenges.length, 1);
+  const sys = boardLib.publicSystemView(board, added.card, now);
+  assert.equal(sys.challenge.doneWhen, "A stranger can see one open challenge on the public board.");
+  const copy = boardLib.copyBuzz(board, {
+    channelId: "public",
+    cardId: added.card.id,
+    publicOrigin: "https://problemoverflow.com/#/public",
+  });
+  assert.equal(copy.ok, true);
+  assert.equal(copy.text.trim().split(/\n/).length, 5);
+  assert.equal(copy.text.trim().split(/\n/).pop(), "https://problemoverflow.com/#/public");
+  assert.doesNotMatch(copy.text, /Done when/);
+});
+
+check("default clock without done-when stays an ordinary problem", () => {
+  const board = boardLib.emptyBoard();
+  const added = boardLib.addCard(board, {
+    channelId: "public",
+    title: "Need a shared object",
+    pointA: "I am still on the first side of this problem.",
+    pointB: "I want a second side a stranger can help with.",
+    obstacle: "There is no shared object on the public board yet.",
+    authorName: "Ada",
+    authorId: "u-ada",
+    userId: "u-ada",
+    challengeDays: 7,
+    whoCanTry: "anyone",
+  }, now);
+  assert.equal(added.ok, true);
+  assert.equal(added.card.challengeUntil, 0);
+  assert.equal(boardLib.challengeView(added.card, now), null);
+  const snap = boardLib.snapshot(board, "public", "", now);
+  assert.equal(snap.challenges.length, 0);
+});
+
+check("only the owner can open a challenge, once, seven a week", () => {
+  const board = boardLib.emptyBoard();
+  const added = boardLib.addCard(board, {
+    channelId: "public",
+    title: "Need a public try",
+    pointA: "I am still on the first side of this problem.",
+    pointB: "I want a second side a stranger can check.",
+    obstacle: "There is no shared object on the public board yet.",
+    authorName: "Ada",
+    authorId: "u-ada",
+    userId: "u-ada",
+  }, now);
+  assert.equal(added.ok, true);
+  const unsigned = boardLib.openChallenge(board, {
+    channelId: "public",
+    cardId: added.card.id,
+    doneWhen: "A stranger can see one open challenge on the public board.",
+  }, now);
+  assert.equal(unsigned.ok, false);
+  const other = boardLib.openChallenge(board, {
+    channelId: "public",
+    cardId: added.card.id,
+    userId: "u-ben",
+    authorId: "u-ben",
+    authorName: "Ben",
+    doneWhen: "A stranger can see one open challenge on the public board.",
+  }, now);
+  assert.equal(other.ok, false);
+  const opened = boardLib.openChallenge(board, {
+    channelId: "public",
+    cardId: added.card.id,
+    userId: "u-ada",
+    authorId: "u-ada",
+    authorName: "Ada",
+    doneWhen: "A stranger can see one open challenge on the public board.",
+    challengeDays: 7,
+  }, now);
+  assert.equal(opened.ok, true);
+  const again = boardLib.openChallenge(board, {
+    channelId: "public",
+    cardId: added.card.id,
+    userId: "u-ada",
+    authorId: "u-ada",
+    authorName: "Ada",
+    doneWhen: "A stranger can see one open challenge on the public board.",
+  }, now);
+  assert.equal(again.ok, false);
+  for (let i = 0; i < 6; i += 1) {
+    const more = boardLib.addCard(board, {
+      channelId: "public",
+      title: `Need public try number ${i + 2}`,
+      pointA: "I am still on the first side of this problem.",
+      pointB: "I want a second side a stranger can check.",
+      obstacle: "There is no shared object on the public board yet.",
+      authorName: "Ada",
+      authorId: "u-ada",
+      userId: "u-ada",
+      doneWhen: "A stranger can see one open challenge on the public board.",
+    }, now);
+    assert.equal(more.ok, true, more.error);
+  }
+  const eighth = boardLib.addCard(board, {
+    channelId: "public",
+    title: "Need public try number 8",
+    pointA: "I am still on the first side of this problem.",
+    pointB: "I want a second side a stranger can check.",
+    obstacle: "There is no shared object on the public board yet.",
+    authorName: "Ada",
+    authorId: "u-ada",
+    userId: "u-ada",
+    doneWhen: "A stranger can see one open challenge on the public board.",
+  }, now);
+  assert.equal(eighth.ok, false);
 });
 
 check("live config picks public bind, origin, and Secure cookies", () => {
@@ -1379,6 +1543,8 @@ async function liveHttpChecks() {
     assert.match(llms.body, /\/p\//);
     assert.match(llms.body, /POST \/api\/cards/);
     assert.match(llms.body, /POST \/api\/rooms/);
+    assert.match(llms.body, /POST \/api\/challenge/);
+    assert.match(llms.body, /doneWhen/);
     assert.match(llms.body, /\/r\//);
 
     const unsignedRoom = await rawReq(port, {
@@ -1490,6 +1656,130 @@ async function liveHttpChecks() {
     assert.match(mapTopics.body, new RegExp(`/r/${topicId}`));
     assert.match(mapTopics.body, new RegExp(`/p/${topicCardId}`));
     assert.doesNotMatch(mapTopics.body, /\/r\/video</);
+
+    const unsignedChallenge = await rawReq(port, {
+      method: "POST",
+      path: "/api/challenge",
+      headers: {
+        Origin: "https://problemoverflow.com",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        channelId: "public",
+        cardId,
+        doneWhen: "A stranger can see one open challenge on the public board.",
+      }),
+    });
+    assert.equal(unsignedChallenge.status, 401);
+
+    const ben = await rawReq(port, {
+      method: "POST",
+      path: "/api/register",
+      headers: {
+        Origin: "https://problemoverflow.com",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ name: "Ben", password: "secretsecret" }),
+    });
+    const benBody = JSON.parse(ben.body);
+    assert.equal(ben.status, 200, ben.body);
+    const benCookie = cookieFrom(ben);
+    const benSession = (benCookie.match(/po_session=([^;]+)/) || [])[1];
+    const stolen = await rawReq(port, {
+      method: "POST",
+      path: "/api/challenge",
+      headers: {
+        Origin: "https://problemoverflow.com",
+        "Content-Type": "application/json",
+        Cookie: `po_session=${benSession}`,
+      },
+      body: JSON.stringify({
+        channelId: "public",
+        cardId,
+        doneWhen: "A stranger can see one open challenge on the public board.",
+      }),
+    });
+    assert.equal(stolen.status, 400);
+
+    const noFlag = await rawReq(port, {
+      method: "POST",
+      path: "/api/cards",
+      headers: {
+        Origin: "https://problemoverflow.com",
+        "Content-Type": "application/json",
+        Cookie: `po_session=${session}`,
+      },
+      body: JSON.stringify({
+        channelId: "public",
+        title: "Need an ordinary card",
+        pointA: "I am still on the first side of this problem.",
+        pointB: "I want a second side a stranger can help with.",
+        obstacle: "There is no shared object on the public board yet.",
+        challengeDays: 7,
+      }),
+    });
+    const noFlagBody = JSON.parse(noFlag.body);
+    assert.equal(noFlag.status, 200, noFlag.body);
+    assert.equal(noFlagBody.card.challengeUntil || 0, 0);
+
+    const opened = await rawReq(port, {
+      method: "POST",
+      path: "/api/challenge",
+      headers: {
+        Origin: "https://problemoverflow.com",
+        "Content-Type": "application/json",
+        Cookie: `po_session=${session}`,
+      },
+      body: JSON.stringify({
+        channelId: "public",
+        cardId,
+        doneWhen: "A stranger can see one open challenge on the public board.",
+        challengeDays: 7,
+      }),
+    });
+    const openedBody = JSON.parse(opened.body);
+    assert.equal(opened.status, 200, opened.body);
+    assert.equal(openedBody.ok, true);
+    assert.equal(openedBody.challenge.open, true);
+
+    const challengePage = await rawReq(port, { path: `/p/${cardId}` });
+    assert.equal(challengePage.status, 200);
+    assert.match(challengePage.body, /Done when/);
+    assert.match(challengePage.body, /A stranger can see one open challenge on the public board/);
+
+    const challengeCard = await rawReq(port, { path: `/api/card?id=${cardId}` });
+    const challengeCardBody = JSON.parse(challengeCard.body);
+    assert.equal(challengeCard.status, 200);
+    assert.equal(challengeCardBody.challenge.open, true);
+
+    const pasteAgain = await rawReq(port, {
+      method: "POST",
+      path: "/api/buzz-copy",
+      headers: {
+        Origin: "https://problemoverflow.com",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ channelId: "public", cardId }),
+    });
+    const pasteAgainBody = JSON.parse(pasteAgain.body);
+    assert.equal(pasteAgainBody.text.trim().split(/\n/).pop(), "https://problemoverflow.com/#/public");
+    assert.doesNotMatch(pasteAgainBody.text, /Done when/);
+
+    const already = await rawReq(port, {
+      method: "POST",
+      path: "/api/challenge",
+      headers: {
+        Origin: "https://problemoverflow.com",
+        "Content-Type": "application/json",
+        Cookie: `po_session=${session}`,
+      },
+      body: JSON.stringify({
+        channelId: "public",
+        cardId,
+        doneWhen: "A stranger can see one open challenge on the public board.",
+      }),
+    });
+    assert.equal(already.status, 400);
   });
 
   await withBoard({ PO_DATA_DIR: dir }, async ({ port }) => {

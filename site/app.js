@@ -51,6 +51,21 @@
     };
   }
 
+  function ownsCard(card) {
+    if (!state.user || !card) return false;
+    if (card.authorId && card.authorId === state.user.id) return true;
+    if (!card.authorId && card.authorName === state.user.name) return true;
+    return false;
+  }
+
+  function untilLabel(until) {
+    try {
+      return new Date(until).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    } catch {
+      return "";
+    }
+  }
+
   function storedKey(channelId) {
     return sessionStorage.getItem("po-key-" + channelId) || "";
   }
@@ -59,7 +74,7 @@
     if (key) sessionStorage.setItem("po-key-" + channelId, key);
   }
 
-  const SORTS = ["live", "rising", "top"];
+  const SORTS = ["live", "rising", "top", "challenge"];
   const RANGES = ["day", "week", "month", "year", "all"];
 
   function channelIsPublic(channelId) {
@@ -379,8 +394,10 @@
         <div class="q-main">
           <h2>
             <button class="q-title" type="button" data-open="${esc(card.id)}" aria-expanded="false">${esc(card.title)}</button>
+            ${row.challenge ? `<span class="challenge-badge${row.challenge.open ? "" : " closed"}">${row.challenge.open ? "Challenge" : "Closed"}</span>` : ""}
           </h2>
           <p class="q-excerpt">${esc(excerpt)}</p>
+          ${row.challenge ? `<p class="challenge-line">Done when ${esc(row.challenge.doneWhen)} · ${row.challenge.open ? "open" : "closed"} until ${esc(untilLabel(row.challenge.until))}</p>` : ""}
           <div class="q-meta">
             ${tags}
             <span>${esc(card.authorName)} · ${esc(card.authorRole)}</span>
@@ -452,6 +469,24 @@
               </label>
               <button class="btn btn-ghost" type="submit">Answer</button>
             </form>
+            ${state.user && ownsCard(card) && !(row.challenge && row.challenge.open) ? `<form class="challenge-box" data-challenge="${esc(card.id)}">
+              <label>Done when
+                <textarea name="doneWhen" required maxlength="160" placeholder="One sentence a stranger can check."></textarea>
+              </label>
+              <label>Clock
+                <select name="challengeDays">
+                  <option value="1">Today</option>
+                  <option value="7" selected>This week</option>
+                </select>
+              </label>
+              <label>Who can try
+                <select name="whoCanTry">
+                  <option value="anyone">Anyone signed in</option>
+                  <option value="this-room">This room</option>
+                </select>
+              </label>
+              <button class="btn btn-ghost" type="submit">Make this a challenge</button>
+            </form>` : ""}
           </div>
         </div>
       </article>`;
@@ -487,6 +522,7 @@
   function feedRows(snap) {
     let rows;
     if (state.sort === "rising") rows = snap.rising || [];
+    else if (state.sort === "challenge") rows = snap.challenges || [];
     else if (state.sort === "top") {
       const range = (topRange && topRange.value) || "week";
       rows = (snap.top && snap.top[range]) || [];
@@ -536,7 +572,7 @@
   function findRow(id) {
     const snap = state.snap;
     if (!snap || !snap.ok) return null;
-    const pools = [snap.live, snap.rising, snap.cards, snap.top && snap.top.all];
+    const pools = [snap.live, snap.rising, snap.challenges, snap.cards, snap.top && snap.top.all];
     for (const pool of pools) {
       if (!Array.isArray(pool)) continue;
       const row = pool.find((r) => r.card && r.card.id === id);
@@ -565,6 +601,9 @@
   function emptyFeedHtml() {
     if (state.tagFilter) {
       return `<div class="empty-board"><p class="empty">Nothing tagged ${esc(state.tagFilter)} in this room.</p><p class="empty-hint"><button type="button" class="linkish" data-clear-tag>Show all problems</button></p></div>`;
+    }
+    if (state.sort === "challenge") {
+      return `<div class="empty-board"><p class="empty">No open challenges here.</p><p class="empty-hint">A challenge is optional. Most problems stay ordinary.</p></div>`;
     }
     return `<div class="empty-board"><p class="empty">No problems here yet.</p><p class="empty-hint">Ask a problem to put the stuck thing on the board. Anyone can read. Sign in to post or vote.</p></div>`;
   }
@@ -874,6 +913,9 @@
         humanContext: data.get("humanContext"),
         agentContext: data.get("agentContext"),
         parentId: data.get("parentId"),
+        doneWhen: String(data.get("doneWhen") || "").trim(),
+        challengeDays: data.get("challengeDays"),
+        whoCanTry: data.get("whoCanTry"),
       }),
     });
     if (!result.ok) {
@@ -889,6 +931,29 @@
       writeHash();
     }
     setStatus("Posted. Copy for Buzz when you want it in the hallway.", "ok");
+    await loadBoard();
+  }
+
+  async function openChallenge(form) {
+    if (!needAccount()) return;
+    const data = new FormData(form);
+    const result = await api("/api/challenge", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        channelId: state.channelId,
+        joinKey: state.joinKey,
+        cardId: form.dataset.challenge,
+        doneWhen: data.get("doneWhen"),
+        challengeDays: data.get("challengeDays"),
+        whoCanTry: data.get("whoCanTry"),
+      }),
+    });
+    if (!result.ok) {
+      setStatus(result.error || "Could not open that challenge.", "bad");
+      return;
+    }
+    setStatus("Challenge is open. People try by posting one answer.", "ok");
     await loadBoard();
   }
 
@@ -1267,6 +1332,12 @@
     if (replyForm) {
       event.preventDefault();
       reply(replyForm.dataset.reply, new FormData(replyForm).get("note"));
+      return;
+    }
+    const challengeForm = event.target.closest("[data-challenge]");
+    if (challengeForm) {
+      event.preventDefault();
+      openChallenge(challengeForm);
       return;
     }
     const buzzForm = event.target.closest("[data-buzz-link]");

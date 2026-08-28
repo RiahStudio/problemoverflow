@@ -92,6 +92,7 @@
             <button type="button" data-sort="live" class="on">Newest</button>
             <button type="button" data-sort="rising">Rising</button>
             <button type="button" data-sort="top">Top</button>
+            <button type="button" data-sort="challenge">Challenges</button>
             <label class="top-range-lab" for="top-range" hidden>Range</label>
             <select id="top-range" hidden>
               <option value="day">Day</option>
@@ -146,6 +147,25 @@
             <label>Bigger problem
               <select name="parentId" id="f-parent">
                 <option value="">None — this is a top problem</option>
+              </select>
+            </label>
+          </details>
+          <details class="more">
+            <summary>Make this a challenge (optional)</summary>
+            <p class="hint">Most problems stay ordinary. A challenge adds a clock and a done line. People try by posting one answer.</p>
+            <label>Done when
+              <textarea name="doneWhen" id="f-done" maxlength="160" placeholder="One sentence a stranger can check, without opening files."></textarea>
+            </label>
+            <label>Clock
+              <select name="challengeDays" id="f-days">
+                <option value="1">Today</option>
+                <option value="7" selected>This week</option>
+              </select>
+            </label>
+            <label>Who can try
+              <select name="whoCanTry" id="f-who">
+                <option value="anyone">Anyone signed in</option>
+                <option value="this-room">This room</option>
               </select>
             </label>
           </details>

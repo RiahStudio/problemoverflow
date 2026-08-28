@@ -233,6 +233,12 @@ function noscriptCard(card, url, view) {
   if (view && view.parent) {
     bits.push(`<p>Part of <a href="/p/${escapeHtml(view.parent.id)}">${escapeHtml(view.parent.title)}</a></p>`);
   }
+  if (view && view.challenge) {
+    bits.push(`<h2>Challenge</h2>`);
+    bits.push(`<p>Done when: ${escapeHtml(view.challenge.doneWhen)}</p>`);
+    bits.push(`<p>${view.challenge.open ? "Open" : "Closed"} until ${escapeHtml(new Date(view.challenge.until).toISOString().slice(0, 10))}</p>`);
+    bits.push(`<p>Who can try: ${view.challenge.whoCanTry === "this-room" ? "this room" : "anyone signed in"}</p>`);
+  }
   for (const field of ["pointA", "pointB", "obstacle", "ask"]) {
     if (card[field]) bits.push(`<p>${escapeHtml(card[field])}</p>`);
   }
@@ -314,7 +320,7 @@ function serveIndex(res, opts) {
         mainEntity: {
           "@type": "Question",
           name: card.title,
-          text: [card.pointA, card.obstacle].filter(Boolean).join(" "),
+          text: [card.pointA, card.obstacle, view && view.challenge && view.challenge.doneWhen].filter(Boolean).join(" "),
           acceptedAnswer: topAnswer ? { "@type": "Answer", text: topAnswer.note } : undefined,
         },
       };
@@ -557,7 +563,7 @@ const server = http.createServer(async (req, res) => {
         json(res, { ok: false, error: "That problem is not on the public board." }, 404);
         return;
       }
-      const view = boardLib.publicSystemView(board, card) || {};
+      const view = boardLib.publicSystemView(board, card, Date.now()) || {};
       json(res, {
         ok: true,
         card: boardLib.stripForViewer(card, role),
@@ -567,6 +573,7 @@ const server = http.createServer(async (req, res) => {
         parent: view.parent || null,
         children: view.children || [],
         answers: view.answers || [],
+        challenge: view.challenge || null,
       });
       return;
     }
@@ -650,6 +657,17 @@ const server = http.createServer(async (req, res) => {
       const body = asAuthor(JSON.parse((await readBody(req)) || "{}"), user);
       const board = loadBoard();
       const result = boardLib.createTopicRoom(board, body, Date.now());
+      if (result.ok) saveBoard(board);
+      json(res, result, result.ok ? 200 : 400);
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/challenge") {
+      const user = needUser(req, res);
+      if (!user) return;
+      const body = asAuthor(JSON.parse((await readBody(req)) || "{}"), user);
+      const board = loadBoard();
+      const result = boardLib.openChallenge(board, body, Date.now());
       if (result.ok) saveBoard(board);
       json(res, result, result.ok ? 200 : 400);
       return;
