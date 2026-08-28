@@ -847,6 +847,11 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (req.method === "GET" && (url.pathname === "/llms.txt" || url.pathname === "/.well-known/llms.txt")) {
+      serveFile(res, path.join(SITE, "llms.txt"));
+      return;
+    }
+
     const cardPath = url.pathname.match(/^\/p\/([A-Za-z0-9._-]+)$/);
     const roomPath = url.pathname.match(/^\/r\/([A-Za-z0-9._-]+)$/);
     if (req.method === "GET" && url.pathname === "/topics") {

@@ -1002,6 +1002,7 @@ check("public board ships robots, a sitemap, and our Buzz hallway", () => {
   assert.match(map, /https:\/\/problemoverflow.com\/topics/);
   assert.match(html, /rel="canonical"/);
   assert.match(html, /href="\/llms\.txt"/);
+  assert.match(html, /href="\/\.well-known\/llms\.txt"/);
   assert.match(html, /href="\/feed\.xml"/);
   assert.match(html, /href="\/styles\.css"/);
   assert.match(html, /src="\/app\.js"/);
@@ -1025,6 +1026,15 @@ check("public board ships robots, a sitemap, and our Buzz hallway", () => {
   assert.match(llms, /GET \/api\/topics/);
   assert.match(llms, /POST \/api\/reply/);
   assert.match(llms, /Origin: https:\/\/problemoverflow.com/);
+  assert.match(llms, /X-PO-Session/);
+  assert.match(llms, /sessionId/);
+  assert.match(llms, /\/\.well-known\/llms\.txt/);
+  assert.match(llms, /pointA/);
+  assert.match(llms, /pointB/);
+  assert.match(llms, /obstacle/);
+  assert.doesNotMatch(llms, /Elron/i);
+  assert.doesNotMatch(llms, /problemify\.md/);
+  assert.doesNotMatch(llms, /skills\/library/);
   assert.match(llms, /problemoverflow.communities.buzz.xyz/);
   assert.match(llms, /https:\/\/problemoverflow.com\/#\/public/);
   assert.doesNotMatch(llms, /C:\\/);
@@ -1040,6 +1050,7 @@ check("public board ships robots, a sitemap, and our Buzz hallway", () => {
   assert.match(serve, /publicSitemapXml/);
   assert.match(serve, /pathname === "\/topics"/);
   assert.match(serve, /\/api\/topics/);
+  assert.match(serve, /well-known\/llms/);
   assert.match(serve, /publicRssXml/);
   assert.match(serve, /startHourly\(ROOT, loadBoard, saveBoard, DATA_DIR\)/);
 });
@@ -1440,6 +1451,24 @@ async function liveHttpChecks() {
     assert.match(setCookie, /SameSite=Lax/i);
     const session = (setCookie.match(/po_session=([^;]+)/) || [])[1];
     assert.ok(session);
+    assert.equal(madeBody.sessionId, session);
+
+    const headerNoOrigin = await rawReq(port, {
+      method: "POST",
+      path: "/api/cards",
+      headers: {
+        "Content-Type": "application/json",
+        "X-PO-Session": session,
+      },
+      body: JSON.stringify({
+        channelId: "public",
+        title: cardTitle,
+        pointA: "A friend and I want help without opening the shop.",
+        pointB: "We only exchange problems on a shared card.",
+        obstacle: "There is no shared object on the public board yet.",
+      }),
+    });
+    assert.equal(headerNoOrigin.status, 403);
 
     const posted = await rawReq(port, {
       method: "POST",
@@ -1447,7 +1476,7 @@ async function liveHttpChecks() {
       headers: {
         Origin: "https://problemoverflow.com",
         "Content-Type": "application/json",
-        Cookie: `po_session=${session}`,
+        "X-PO-Session": session,
       },
       body: JSON.stringify({
         channelId: "public",
@@ -1561,6 +1590,65 @@ async function liveHttpChecks() {
     assert.match(llms.body, /\/r\//);
     assert.match(llms.body, /\/topics/);
     assert.match(llms.body, /GET \/api\/topics/);
+    assert.match(llms.body, /X-PO-Session/);
+    assert.match(llms.body, /sessionId/);
+    assert.doesNotMatch(llms.body, /Elron/i);
+    const wellKnown = await rawReq(port, { path: "/.well-known/llms.txt" });
+    assert.equal(wellKnown.status, 200);
+    assert.equal(wellKnown.body, llms.body);
+
+    const agentMade = await rawReq(port, {
+      method: "POST",
+      path: "/api/register",
+      headers: {
+        Origin: "https://problemoverflow.com",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ name: "NiaBot", password: "secretsecret", role: "agent" }),
+    });
+    const agentBody = JSON.parse(agentMade.body);
+    assert.equal(agentMade.status, 200, agentMade.body);
+    const agentSession = agentBody.sessionId;
+    assert.ok(agentSession);
+
+    const agentMissing = await rawReq(port, {
+      method: "POST",
+      path: "/api/cards",
+      headers: {
+        Origin: "https://problemoverflow.com",
+        "Content-Type": "application/json",
+        "X-PO-Session": agentSession,
+      },
+      body: JSON.stringify({
+        channelId: "public",
+        title: "Need an agent write door",
+        pointA: "I can read the board but I cannot keep a cookie jar.",
+        pointB: "I want to post a leak-clean card with a session header.",
+        obstacle: "The public write door was cookie-only in the instructions.",
+      }),
+    });
+    assert.equal(agentMissing.status, 400);
+    assert.match(agentMissing.body, /deeper box/i);
+
+    const agentPosted = await rawReq(port, {
+      method: "POST",
+      path: "/api/cards",
+      headers: {
+        Origin: "https://problemoverflow.com",
+        "Content-Type": "application/json",
+        "X-PO-Session": agentSession,
+      },
+      body: JSON.stringify({
+        channelId: "public",
+        title: "Need an agent write door",
+        pointA: "I can read the board but I cannot keep a cookie jar.",
+        pointB: "I want to post a leak-clean card with a session header.",
+        obstacle: "The public write door was cookie-only in the instructions.",
+        agentContext: "This runner cannot store cookies. Origin stays required. No workshop paths, keys, or private rooms.",
+      }),
+    });
+    assert.equal(agentPosted.status, 200, agentPosted.body);
+    assert.equal(JSON.parse(agentPosted.body).ok, true);
 
     const unsignedRoom = await rawReq(port, {
       method: "POST",
