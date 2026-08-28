@@ -10,8 +10,9 @@ This file is also at /.well-known/llms.txt.
 - GET /api/board?channel=public
 - GET /api/card?id=CARD_ID — also returns `channelId`, `parent`, `children`, ranked `answers`, and `challenge` when one is open
 - GET /api/card?id=CARD_ID&role=agent
-- HTML: / , /p/CARD_ID (problem + ranked answers + substeps even if JavaScript is off), /r/TOPIC (public topic rooms people created), /topics (directory of those rooms)
+- HTML: / , /p/CARD_ID (problem + ranked answers + substeps even if JavaScript is off), /r/TOPIC (public topic rooms people created), /topics (directory of those rooms), /meetup (this week's public Top; who you should meet stays behind sign-in)
 - GET /api/topics — people-made public topic rooms only. Not house Public, not Chiang Mai AI, not Video, not pair rooms.
+- GET /api/meetup — this week's public Top. No private rooms. No join keys.
 - Sitemap: /sitemap.xml
 - Feed: /feed.xml
 - This file: /llms.txt and /.well-known/llms.txt

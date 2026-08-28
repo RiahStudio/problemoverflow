@@ -26,6 +26,7 @@
     tagFilter: "",
     cardId: "",
     directory: "",
+    meetup: { top: [], winner: null },
   };
 
   function esc(value) {
@@ -116,6 +117,10 @@
     return String(location.pathname || "") === "/topics";
   }
 
+  function meetupFromPath() {
+    return String(location.pathname || "") === "/meetup";
+  }
+
   function isPublicTopic(channelId) {
     const ch = (state.channels || []).find((c) => c.id === channelId);
     return Boolean(ch && ch.visibility === "public" && ch.kind === "topic");
@@ -124,6 +129,9 @@
   function pagePath() {
     if (state.directory === "topics" && !state.cardId) {
       return "/topics";
+    }
+    if (state.directory === "meetup" && !state.cardId) {
+      return "/meetup";
     }
     if (channelIsPublic(state.channelId) && state.cardId) {
       return "/p/" + encodeURIComponent(state.cardId);
@@ -141,6 +149,12 @@
       if (cur !== dest && cur !== dest + "#") history.replaceState(null, "", dest);
       return;
     }
+    if (state.directory === "meetup") {
+      const dest = "/meetup";
+      const cur = location.pathname + location.search + (location.hash || "");
+      if (cur !== dest && cur !== dest + "#") history.replaceState(null, "", dest);
+      return;
+    }
     const hideCardInHash = channelIsPublic(state.channelId) && state.cardId;
     const next = hashFromState({ card: hideCardInHash ? "" : state.cardId });
     const dest = pagePath() + location.search + next;
@@ -152,6 +166,13 @@
   function parseHash() {
     if (topicsFromPath()) {
       state.directory = "topics";
+      state.channelId = "public";
+      state.joinKey = storedKey("public");
+      state.cardId = "";
+      return;
+    }
+    if (meetupFromPath()) {
+      state.directory = "meetup";
       state.channelId = "public";
       state.joinKey = storedKey("public");
       state.cardId = "";
@@ -683,6 +704,21 @@
     }).join("")}</ol>`;
   }
 
+  function meetupDirHtml() {
+    const rows = (state.meetup && state.meetup.top) || [];
+    if (!rows.length) {
+      return `<div class="empty-board"><p class="empty">No Top yet this week.</p><p class="empty-hint">Public problems rise here. Sign in and turn on Should Meet to see who you should talk to.</p></div>`;
+    }
+    const winner = state.meetup.winner
+      ? `<p class="empty-hint">This week: ${esc(state.meetup.winner.title)}</p>`
+      : "";
+    return `${winner}<ol class="topic-dir">${rows.map((row) => {
+      const href = "/p/" + encodeURIComponent(row.id);
+      const by = row.authorName ? `<p>${esc(row.authorName)}</p>` : "";
+      return `<li><article class="topic-row"><h2><a href="${esc(href)}">${esc(row.title)}</a></h2>${by}</article></li>`;
+    }).join("")}</ol><p class="empty-hint">Who you should meet stays behind sign-in. Turn on Should Meet in the sidebar.</p>`;
+  }
+
   function renderFeed() {
     const snap = state.snap;
     syncSortUi();
@@ -691,6 +727,17 @@
       $("room-name").textContent = "Topics";
       $("room-blurb").textContent = "Public topic rooms people opened.";
       feedEl.innerHTML = topicDirHtml();
+      hereEl.innerHTML = "";
+      renderMeet();
+      const fold = $("hallway-fold");
+      if (fold) fold.textContent = "";
+      return;
+    }
+    if (state.directory === "meetup") {
+      setDirectoryChrome(true);
+      $("room-name").textContent = "Meetup";
+      $("room-blurb").textContent = "Who rose on the public board this week. Who you should meet stays behind sign-in.";
+      feedEl.innerHTML = meetupDirHtml();
       hereEl.innerHTML = "";
       renderMeet();
       const fold = $("hallway-fold");
@@ -757,6 +804,10 @@
       snap.channels.forEach((c) => {
         if (c.joinKey) rememberKey(c.id, c.joinKey);
       });
+    }
+    if (state.directory === "meetup") {
+      const meetup = await api("/api/meetup");
+      state.meetup = meetup && meetup.ok ? meetup : { top: [], winner: null };
     }
     renderRooms();
     renderFeed();

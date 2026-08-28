@@ -277,8 +277,10 @@ function noscriptHome(problems, origin) {
     const url = boardLib.publicPermalink(origin, c.id);
     return `<li><a href="${escapeHtml(url)}">${escapeHtml(c.title)}</a></li>`;
   }).join("");
-  const topics = `${String(origin || "").replace(/\/$/, "")}/topics`;
-  return `<noscript><h1>Problem Overflow</h1><p><a href="${escapeHtml(topics)}">Public topics</a></p><ol>${items}</ol></noscript>`;
+  const base = String(origin || "").replace(/\/$/, "");
+  const topics = `${base}/topics`;
+  const meetup = `${base}/meetup`;
+  return `<noscript><h1>Problem Overflow</h1><p><a href="${escapeHtml(topics)}">Public topics</a> · <a href="${escapeHtml(meetup)}">Meetup</a></p><ol>${items}</ol></noscript>`;
 }
 
 function noscriptTopics(topics, origin) {
@@ -294,10 +296,27 @@ function noscriptTopics(topics, origin) {
   return `<noscript><h1>Topics</h1><ol>${items}</ol><p><a href="${escapeHtml(home)}">Public board</a></p></noscript>`;
 }
 
+function noscriptMeetup(view, origin) {
+  const base = String(origin || "").replace(/\/$/, "");
+  const home = `${base}/`;
+  const topics = `${base}/topics`;
+  const top = (view && view.top) || [];
+  if (!top.length) {
+    return `<noscript><h1>Meetup</h1><p>No Top yet this week.</p><p>Sign in to see who you should meet.</p><p><a href="${escapeHtml(home)}">Public board</a> · <a href="${escapeHtml(topics)}">Topics</a></p></noscript>`;
+  }
+  const items = top.map((row) => {
+    const url = boardLib.publicPermalink(origin, row.id);
+    const by = row.authorName ? ` — ${escapeHtml(row.authorName)}` : "";
+    return `<li><a href="${escapeHtml(url)}">${escapeHtml(row.title)}</a>${by}</li>`;
+  }).join("");
+  return `<noscript><h1>Meetup</h1><p>Who rose on the public board this week.</p><ol>${items}</ol><p>Who you should meet stays behind sign-in.</p><p><a href="${escapeHtml(home)}">Public board</a> · <a href="${escapeHtml(topics)}">Topics</a></p></noscript>`;
+}
+
 function serveIndex(res, opts) {
   const cardId = (opts && opts.cardId) || "";
   const roomId = (opts && opts.roomId) || "";
   const topicsPage = Boolean(opts && opts.topics);
+  const meetupPage = Boolean(opts && opts.meetup);
   const filePath = path.join(SITE, "index.html");
   fs.readFile(filePath, "utf8", (err, html) => {
     if (err) {
@@ -400,6 +419,35 @@ function serveIndex(res, opts) {
         out = out.replace("</head>", `<script type="application/ld+json">${JSON.stringify(ld).replace(/</g, "\\u003c")}</script></head>`);
       }
       out = out.replace("</body>", `${noscriptTopics(topics, origin)}</body>`);
+    } else if (meetupPage && origin) {
+      const view = boardLib.publicMeetupView(board);
+      const url = boardLib.publicMeetupPermalink(origin);
+      const desc = "Who rose on the public board this week. Who you should meet stays behind sign-in.";
+      const title = "Meetup · Problem Overflow";
+      out = out
+        .replace(/<title>[^<]*<\/title>/, `<title>${title}</title>`)
+        .replace(/<link rel="canonical" href="[^"]*">/, `<link rel="canonical" href="${url}">`)
+        .replace(/<meta name="description" content="[^"]*">/, `<meta name="description" content="${desc}">`)
+        .replace(/<meta property="og:url" content="[^"]*">/, `<meta property="og:url" content="${url}">`)
+        .replace(/<meta property="og:title" content="[^"]*">/, `<meta property="og:title" content="${title}">`)
+        .replace(/<meta property="og:description" content="[^"]*">/, `<meta property="og:description" content="${desc}">`)
+        .replace(/<meta name="twitter:title" content="[^"]*">/, `<meta name="twitter:title" content="${title}">`)
+        .replace(/<meta name="twitter:description" content="[^"]*">/, `<meta name="twitter:description" content="${desc}">`);
+      if (view.top.length) {
+        const ld = {
+          "@context": "https://schema.org",
+          "@type": "ItemList",
+          name: "Meetup",
+          itemListElement: view.top.map((row, i) => ({
+            "@type": "ListItem",
+            position: i + 1,
+            url: boardLib.publicPermalink(origin, row.id),
+            name: row.title,
+          })),
+        };
+        out = out.replace("</head>", `<script type="application/ld+json">${JSON.stringify(ld).replace(/</g, "\\u003c")}</script></head>`);
+      }
+      out = out.replace("</body>", `${noscriptMeetup(view, origin)}</body>`);
     } else if (!cardId && !roomId && origin) {
       const problems = boardLib.publicProblems(board);
       if (problems.length) {
@@ -591,6 +639,17 @@ const server = http.createServer(async (req, res) => {
           ...t,
           url: boardLib.publicRoomPermalink(origin, t.id),
         })),
+      });
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/meetup") {
+      const origin = String(ORIGIN || "").replace(/\/$/, "");
+      const view = boardLib.publicMeetupView(loadBoard());
+      json(res, {
+        ok: true,
+        ...view,
+        url: boardLib.publicMeetupPermalink(origin),
       });
       return;
     }
@@ -856,6 +915,10 @@ const server = http.createServer(async (req, res) => {
     const roomPath = url.pathname.match(/^\/r\/([A-Za-z0-9._-]+)$/);
     if (req.method === "GET" && url.pathname === "/topics") {
       serveIndex(res, { topics: true });
+      return;
+    }
+    if (req.method === "GET" && url.pathname === "/meetup") {
+      serveIndex(res, { meetup: true });
       return;
     }
     if (req.method === "GET" && (url.pathname === "/" || url.pathname === "/index.html" || cardPath || roomPath)) {

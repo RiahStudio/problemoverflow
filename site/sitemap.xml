@@ -8,4 +8,8 @@
     <loc>https://problemoverflow.com/topics</loc>
     <changefreq>hourly</changefreq>
   </url>
+  <url>
+    <loc>https://problemoverflow.com/meetup</loc>
+    <changefreq>hourly</changefreq>
+  </url>
 </urlset>
