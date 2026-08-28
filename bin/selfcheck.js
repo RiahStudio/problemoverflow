@@ -264,9 +264,14 @@ check("people can open a public topic room", () => {
   const capped = boardLib.createTopicRoom(board, { name: "Fourth topic", userId: "u-ada" }, now);
   assert.equal(capped.ok, false);
   const xml = boardLib.publicSitemapXml(board, "https://problemoverflow.com");
+  assert.match(xml, /\/topics</);
   assert.match(xml, new RegExp("/r/" + made.channel.id));
   assert.doesNotMatch(xml, /\/r\/video</);
   assert.doesNotMatch(xml, /\/r\/public</);
+  const listed = boardLib.publicTopicRooms(board);
+  assert.ok(listed.some((t) => t.id === made.channel.id));
+  assert.ok(!listed.some((t) => t.id === "public" || t.id === "video" || t.id === "chiang-mai-ai"));
+  assert.equal(boardLib.publicTopicsPermalink("https://problemoverflow.com"), "https://problemoverflow.com/topics");
   const posted = boardLib.addCard(board, {
     channelId: made.channel.id,
     title: "Need a topic stuck thing",
@@ -994,12 +999,14 @@ check("public board ships robots, a sitemap, and our Buzz hallway", () => {
   const app = fs.readFileSync(path.join(site, "app.js"), "utf8");
   assert.match(robots, /Sitemap: https:\/\/problemoverflow.com\/sitemap.xml/);
   assert.match(map, /https:\/\/problemoverflow.com\//);
+  assert.match(map, /https:\/\/problemoverflow.com\/topics/);
   assert.match(html, /rel="canonical"/);
   assert.match(html, /href="\/llms\.txt"/);
   assert.match(html, /href="\/feed\.xml"/);
   assert.match(html, /href="\/styles\.css"/);
   assert.match(html, /src="\/app\.js"/);
   assert.match(html, /href="https:\/\/problemoverflow.communities.buzz.xyz"/);
+  assert.match(html, /href="\/topics"/);
   assert.match(html, /data-sort="challenge"/);
   assert.match(html, /id="f-done"/);
   assert.doesNotMatch(html, /href="https:\/\/buzz\.xyz"/);
@@ -1014,6 +1021,8 @@ check("public board ships robots, a sitemap, and our Buzz hallway", () => {
   assert.match(llms, /POST \/api\/rooms/);
   assert.match(llms, /POST \/api\/challenge/);
   assert.match(llms, /\/r\//);
+  assert.match(llms, /\/topics/);
+  assert.match(llms, /GET \/api\/topics/);
   assert.match(llms, /POST \/api\/reply/);
   assert.match(llms, /Origin: https:\/\/problemoverflow.com/);
   assert.match(llms, /problemoverflow.communities.buzz.xyz/);
@@ -1029,6 +1038,8 @@ check("public board ships robots, a sitemap, and our Buzz hallway", () => {
   assert.match(serve, /\/api\/challenge/);
   assert.match(serve, /Done when/);
   assert.match(serve, /publicSitemapXml/);
+  assert.match(serve, /pathname === "\/topics"/);
+  assert.match(serve, /\/api\/topics/);
   assert.match(serve, /publicRssXml/);
   assert.match(serve, /startHourly\(ROOT, loadBoard, saveBoard, DATA_DIR\)/);
 });
@@ -1061,6 +1072,7 @@ check("public problems have real pages; private rooms do not", () => {
     "https://problemoverflow.com/p/" + pub.card.id,
   );
   const xml = boardLib.publicSitemapXml(board, "https://problemoverflow.com");
+  assert.match(xml, /\/topics</);
   assert.match(xml, new RegExp("/p/" + pub.card.id));
   assert.doesNotMatch(xml, new RegExp(priv.card.id));
   const rss = boardLib.publicRssXml(board, "https://problemoverflow.com");
@@ -1489,6 +1501,7 @@ async function liveHttpChecks() {
     assert.equal(home.status, 200);
     assert.match(home.body, /<noscript>/);
     assert.match(home.body, /Need a shared object/);
+    assert.match(home.body, /Public topics/);
 
     const one = await rawReq(port, { path: `/api/card?id=${cardId}` });
     const oneBody = JSON.parse(one.body);
@@ -1546,6 +1559,8 @@ async function liveHttpChecks() {
     assert.match(llms.body, /POST \/api\/challenge/);
     assert.match(llms.body, /doneWhen/);
     assert.match(llms.body, /\/r\//);
+    assert.match(llms.body, /\/topics/);
+    assert.match(llms.body, /GET \/api\/topics/);
 
     const unsignedRoom = await rawReq(port, {
       method: "POST",
@@ -1577,6 +1592,24 @@ async function liveHttpChecks() {
     assert.equal(roomPage.status, 200);
     assert.match(roomPage.body, /Agents/);
     assert.match(roomPage.body, /<noscript>/);
+    assert.match(roomPage.body, /All topics/);
+
+    const topicsPage = await rawReq(port, { path: "/topics" });
+    assert.equal(topicsPage.status, 200);
+    assert.match(topicsPage.body, /Agents/);
+    assert.match(topicsPage.body, /Public topic for agents/);
+    assert.match(topicsPage.body, /<noscript>/);
+    assert.match(topicsPage.body, new RegExp(`/r/${topicId}`));
+    assert.doesNotMatch(topicsPage.body, /Chiang Mai AI/);
+    assert.doesNotMatch(topicsPage.body, /vid-cut-room-9m4w/);
+    assert.doesNotMatch(topicsPage.body, /cm-4c-nimman-7k2q/);
+
+    const topicsApi = await rawReq(port, { path: "/api/topics" });
+    const topicsApiBody = JSON.parse(topicsApi.body);
+    assert.equal(topicsApi.status, 200);
+    assert.equal(topicsApiBody.ok, true);
+    assert.ok(topicsApiBody.topics.some((t) => t.id === topicId));
+    assert.ok(!topicsApiBody.topics.some((t) => t.id === "public" || t.id === "video" || t.id === "chiang-mai-ai"));
 
     const houseRoom = await rawReq(port, { path: "/r/public" });
     assert.equal(houseRoom.status, 404);
@@ -1653,6 +1686,7 @@ async function liveHttpChecks() {
     assert.match(sysPage.body, /acceptedAnswer/);
 
     const mapTopics = await rawReq(port, { path: "/sitemap.xml" });
+    assert.match(mapTopics.body, /\/topics</);
     assert.match(mapTopics.body, new RegExp(`/r/${topicId}`));
     assert.match(mapTopics.body, new RegExp(`/p/${topicCardId}`));
     assert.doesNotMatch(mapTopics.body, /\/r\/video</);

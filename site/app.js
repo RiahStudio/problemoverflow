@@ -25,6 +25,7 @@
     sort: "live",
     tagFilter: "",
     cardId: "",
+    directory: "",
   };
 
   function esc(value) {
@@ -111,12 +112,19 @@
     return m ? m[1] : "";
   }
 
+  function topicsFromPath() {
+    return String(location.pathname || "") === "/topics";
+  }
+
   function isPublicTopic(channelId) {
     const ch = (state.channels || []).find((c) => c.id === channelId);
     return Boolean(ch && ch.visibility === "public" && ch.kind === "topic");
   }
 
   function pagePath() {
+    if (state.directory === "topics" && !state.cardId) {
+      return "/topics";
+    }
     if (channelIsPublic(state.channelId) && state.cardId) {
       return "/p/" + encodeURIComponent(state.cardId);
     }
@@ -127,6 +135,12 @@
   }
 
   function writeHash() {
+    if (state.directory === "topics") {
+      const dest = "/topics";
+      const cur = location.pathname + location.search + (location.hash || "");
+      if (cur !== dest && cur !== dest + "#") history.replaceState(null, "", dest);
+      return;
+    }
     const hideCardInHash = channelIsPublic(state.channelId) && state.cardId;
     const next = hashFromState({ card: hideCardInHash ? "" : state.cardId });
     const dest = pagePath() + location.search + next;
@@ -136,6 +150,14 @@
   }
 
   function parseHash() {
+    if (topicsFromPath()) {
+      state.directory = "topics";
+      state.channelId = "public";
+      state.joinKey = storedKey("public");
+      state.cardId = "";
+      return;
+    }
+    state.directory = "";
     const pathCard = cardIdFromPath();
     const pathRoom = roomIdFromPath();
     const raw = (location.hash || (pathRoom ? "#/" + pathRoom : "#/public")).replace(/^#\/?/, "");
@@ -183,6 +205,7 @@
 
   function goRoom(channel) {
     if (!channel) return;
+    state.directory = "";
     state.channelId = channel.id;
     state.joinKey = storedKey(channel.id);
     state.cardId = "";
@@ -508,7 +531,7 @@
     });
     const buttons = ranked.map((c) => {
       const locked = c.visibility !== "public";
-      const on = c.id === state.channelId ? " on" : "";
+      const on = !state.directory && c.id === state.channelId ? " on" : "";
       return `<button class="room${on}" type="button" data-room="${esc(c.id)}" title="${esc(c.blurb)}">
         ${esc(c.name)}${c.kind === "pair" ? ` <span class="lock">you two</span>` : locked ? ` <span class="lock">private</span>` : ""}
       </button>`;
@@ -638,9 +661,43 @@
       : `<p class="empty">No matches yet. Mark a few problems, then refresh.</p>`;
   }
 
+  function setDirectoryChrome(on) {
+    const actions = document.querySelector(".room-actions");
+    const panel = $("ask-panel");
+    if (actions) actions.hidden = Boolean(on);
+    if (panel) {
+      panel.hidden = Boolean(on);
+      if (on) panel.open = false;
+    }
+  }
+
+  function topicDirHtml() {
+    const topics = (state.channels || []).filter((c) => c.visibility === "public" && c.kind === "topic");
+    if (!topics.length) {
+      return `<div class="empty-board"><p class="empty">No public topics yet.</p><p class="empty-hint">Sign in to open one. House Public stays on the front page.</p></div>`;
+    }
+    return `<ol class="topic-dir">${topics.map((t) => {
+      const href = "/r/" + encodeURIComponent(t.id);
+      const blurb = t.blurb ? `<p>${esc(t.blurb)}</p>` : "";
+      return `<li><article class="topic-row"><h2><a href="${esc(href)}">${esc(t.name)}</a></h2>${blurb}</article></li>`;
+    }).join("")}</ol>`;
+  }
+
   function renderFeed() {
     const snap = state.snap;
     syncSortUi();
+    if (state.directory === "topics") {
+      setDirectoryChrome(true);
+      $("room-name").textContent = "Topics";
+      $("room-blurb").textContent = "Public topic rooms people opened.";
+      feedEl.innerHTML = topicDirHtml();
+      hereEl.innerHTML = "";
+      renderMeet();
+      const fold = $("hallway-fold");
+      if (fold) fold.textContent = "";
+      return;
+    }
+    setDirectoryChrome(false);
     if (!snap || !snap.ok) {
       feedEl.innerHTML = `<p class="empty">${esc((snap && snap.error) || "This room needs its private link.")}</p>`;
       hereEl.innerHTML = "";

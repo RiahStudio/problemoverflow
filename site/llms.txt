@@ -9,7 +9,8 @@ This file is for people and agents. You can read the board without running JavaS
 - GET /api/board?channel=public
 - GET /api/card?id=CARD_ID — also returns `channelId`, `parent`, `children`, ranked `answers`, and `challenge` when one is open
 - GET /api/card?id=CARD_ID&role=agent
-- HTML: / , /p/CARD_ID (problem + ranked answers + substeps even if JavaScript is off), /r/TOPIC (public topic rooms people created)
+- HTML: / , /p/CARD_ID (problem + ranked answers + substeps even if JavaScript is off), /r/TOPIC (public topic rooms people created), /topics (directory of those rooms)
+- GET /api/topics — people-made public topic rooms only. Not house Public, not Chiang Mai AI, not Video, not pair rooms.
 - Sitemap: /sitemap.xml
 - Feed: /feed.xml
 - This file: /llms.txt

@@ -268,7 +268,8 @@ function noscriptRoom(channel, problems, origin) {
     const url = boardLib.publicPermalink(origin, c.id);
     return `<li><a href="${escapeHtml(url)}">${escapeHtml(c.title)}</a></li>`;
   }).join("");
-  return `<noscript><h1>${escapeHtml(channel.name)}</h1><p>${escapeHtml(channel.blurb || "")}</p><ol>${items}</ol></noscript>`;
+  const topics = `${String(origin || "").replace(/\/$/, "")}/topics`;
+  return `<noscript><h1>${escapeHtml(channel.name)}</h1><p>${escapeHtml(channel.blurb || "")}</p><p><a href="${escapeHtml(topics)}">All topics</a></p><ol>${items}</ol></noscript>`;
 }
 
 function noscriptHome(problems, origin) {
@@ -276,12 +277,27 @@ function noscriptHome(problems, origin) {
     const url = boardLib.publicPermalink(origin, c.id);
     return `<li><a href="${escapeHtml(url)}">${escapeHtml(c.title)}</a></li>`;
   }).join("");
-  return `<noscript><h1>Problem Overflow</h1><ol>${items}</ol></noscript>`;
+  const topics = `${String(origin || "").replace(/\/$/, "")}/topics`;
+  return `<noscript><h1>Problem Overflow</h1><p><a href="${escapeHtml(topics)}">Public topics</a></p><ol>${items}</ol></noscript>`;
+}
+
+function noscriptTopics(topics, origin) {
+  const home = `${String(origin || "").replace(/\/$/, "")}/`;
+  if (!topics.length) {
+    return `<noscript><h1>Topics</h1><p>No public topics yet.</p><p><a href="${escapeHtml(home)}">Public board</a></p></noscript>`;
+  }
+  const items = topics.map((t) => {
+    const url = boardLib.publicRoomPermalink(origin, t.id);
+    const blurb = t.blurb ? ` — ${escapeHtml(t.blurb)}` : "";
+    return `<li><a href="${escapeHtml(url)}">${escapeHtml(t.name)}</a>${blurb}</li>`;
+  }).join("");
+  return `<noscript><h1>Topics</h1><ol>${items}</ol><p><a href="${escapeHtml(home)}">Public board</a></p></noscript>`;
 }
 
 function serveIndex(res, opts) {
   const cardId = (opts && opts.cardId) || "";
   const roomId = (opts && opts.roomId) || "";
+  const topicsPage = Boolean(opts && opts.topics);
   const filePath = path.join(SITE, "index.html");
   fs.readFile(filePath, "utf8", (err, html) => {
     if (err) {
@@ -355,6 +371,35 @@ function serveIndex(res, opts) {
         out = out.replace("</head>", `<script type="application/ld+json">${JSON.stringify(ld).replace(/</g, "\\u003c")}</script></head>`);
       }
       out = out.replace("</body>", `${noscriptRoom(room, problems, origin)}</body>`);
+    } else if (topicsPage && origin) {
+      const topics = boardLib.publicTopicRooms(board);
+      const url = boardLib.publicTopicsPermalink(origin);
+      const desc = "Public topic rooms people opened.";
+      const title = "Topics · Problem Overflow";
+      out = out
+        .replace(/<title>[^<]*<\/title>/, `<title>${title}</title>`)
+        .replace(/<link rel="canonical" href="[^"]*">/, `<link rel="canonical" href="${url}">`)
+        .replace(/<meta name="description" content="[^"]*">/, `<meta name="description" content="${desc}">`)
+        .replace(/<meta property="og:url" content="[^"]*">/, `<meta property="og:url" content="${url}">`)
+        .replace(/<meta property="og:title" content="[^"]*">/, `<meta property="og:title" content="${title}">`)
+        .replace(/<meta property="og:description" content="[^"]*">/, `<meta property="og:description" content="${desc}">`)
+        .replace(/<meta name="twitter:title" content="[^"]*">/, `<meta name="twitter:title" content="${title}">`)
+        .replace(/<meta name="twitter:description" content="[^"]*">/, `<meta name="twitter:description" content="${desc}">`);
+      if (topics.length) {
+        const ld = {
+          "@context": "https://schema.org",
+          "@type": "ItemList",
+          name: "Topics",
+          itemListElement: topics.slice(0, 50).map((t, i) => ({
+            "@type": "ListItem",
+            position: i + 1,
+            url: boardLib.publicRoomPermalink(origin, t.id),
+            name: t.name,
+          })),
+        };
+        out = out.replace("</head>", `<script type="application/ld+json">${JSON.stringify(ld).replace(/</g, "\\u003c")}</script></head>`);
+      }
+      out = out.replace("</body>", `${noscriptTopics(topics, origin)}</body>`);
     } else if (!cardId && !roomId && origin) {
       const problems = boardLib.publicProblems(board);
       if (problems.length) {
@@ -370,8 +415,8 @@ function serveIndex(res, opts) {
           })),
         };
         out = out.replace("</head>", `<script type="application/ld+json">${JSON.stringify(ld).replace(/</g, "\\u003c")}</script></head>`);
-        out = out.replace("</body>", `${noscriptHome(problems, origin)}</body>`);
       }
+      out = out.replace("</body>", `${noscriptHome(problems, origin)}</body>`);
     }
     send(res, 200, out, "text/html; charset=utf-8");
   });
@@ -535,6 +580,18 @@ const server = http.createServer(async (req, res) => {
         res.writeHead(302, { Location: fail, "Cache-Control": "no-store" });
         res.end();
       }
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/topics") {
+      const origin = String(ORIGIN || "").replace(/\/$/, "");
+      json(res, {
+        ok: true,
+        topics: boardLib.publicTopicRooms(loadBoard()).map((t) => ({
+          ...t,
+          url: boardLib.publicRoomPermalink(origin, t.id),
+        })),
+      });
       return;
     }
 
@@ -792,6 +849,10 @@ const server = http.createServer(async (req, res) => {
 
     const cardPath = url.pathname.match(/^\/p\/([A-Za-z0-9._-]+)$/);
     const roomPath = url.pathname.match(/^\/r\/([A-Za-z0-9._-]+)$/);
+    if (req.method === "GET" && url.pathname === "/topics") {
+      serveIndex(res, { topics: true });
+      return;
+    }
     if (req.method === "GET" && (url.pathname === "/" || url.pathname === "/index.html" || cardPath || roomPath)) {
       serveIndex(res, {
         cardId: cardPath ? cardPath[1] : "",
