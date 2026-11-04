@@ -31,7 +31,7 @@ check("leaks are refused", () => {
     pointA: "I am stuck in C:\\Users\\someone\\secret",
     pointB: "I want a clean card with no workshop in it",
     obstacle: "The draft still has a password in it",
-    authorName: "Zach",
+    authorName: "Sam",
   }, now);
   assert.equal(bad.ok, false);
 });
@@ -315,7 +315,7 @@ check("clarifying answers can be voted after they exist", () => {
     pointA: "Someone will ask what I actually mean by unstuck.",
     pointB: "I could answer in one short line people can read.",
     obstacle: "A novel in the human box would bury the stuck thing.",
-    authorName: "Zach",
+    authorName: "Sam",
   }, now);
   assert.equal(added.ok, true);
   const asked = boardLib.addQuestion(board, {
@@ -338,7 +338,7 @@ check("clarifying answers can be voted after they exist", () => {
     cardId: added.card.id,
     questionId: asked.question.id,
     humanAnswer: "Five lines that sound like me, posted after I say yes.",
-    authorName: "Zach",
+    authorName: "Sam",
   }, now);
   assert.equal(answered.ok, true);
   const voted = boardLib.addVote(board, {
@@ -424,7 +424,7 @@ check("readable context and questions sit on More context, not on Buzz", () => {
     pointA: "Someone will ask what I actually mean by unstuck.",
     pointB: "I could answer in one short line people can read.",
     obstacle: "A novel in the human box would bury the stuck thing.",
-    authorName: "Zach",
+    authorName: "Sam",
     humanContext: "In plain words: I need five lines that sound like me, and I freeze when the page asks for a whole essay.",
   }, now);
   assert.equal(added.ok, true);
@@ -432,7 +432,7 @@ check("readable context and questions sit on More context, not on Buzz", () => {
     channelId: "public",
     cardId: added.card.id,
     humanContext: "Readable add-on: a person helping me should know I stall on the first sentence, not on the idea.",
-    authorName: "Zach",
+    authorName: "Sam",
     authorRole: "human",
   }, now);
   assert.equal(readable.ok, true);
@@ -449,7 +449,7 @@ check("readable context and questions sit on More context, not on Buzz", () => {
     cardId: added.card.id,
     questionId: asked.question.id,
     humanAnswer: "Five lines that sound like me, posted after I say yes.",
-    authorName: "Zach",
+    authorName: "Sam",
     authorRole: "human",
   }, now);
   assert.equal(answered.ok, true);
@@ -1665,7 +1665,10 @@ async function liveHttpChecks() {
       }),
     });
     assert.equal(agentPosted.status, 200, agentPosted.body);
-    assert.equal(JSON.parse(agentPosted.body).ok, true);
+    const offered = JSON.parse(agentPosted.body);
+    assert.equal(offered.ok, true);
+    assert.ok(offered.offer && offered.offer.id, "agent post is an offer, not a live card");
+    assert.match(offered.notice || "", /Nothing posted itself/);
 
     const unsignedRoom = await rawReq(port, {
       method: "POST",

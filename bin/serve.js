@@ -16,6 +16,46 @@ const SITE = path.join(ROOT, "site");
 const GOOGLE_OAUTH = path.join(ROOT, "lib", "google-oauth.mjs");
 const TOKEN = crypto.randomBytes(24).toString("hex");
 const googlePending = new Map();
+const authAttempts = new Map();
+const AUTH_WINDOW_MS = 15 * 60 * 1000;
+
+function pruneAuthAttempts(now) {
+  for (const [key, row] of authAttempts) {
+    if (now - row.since >= AUTH_WINDOW_MS) authAttempts.delete(key);
+  }
+}
+
+function authGuard(req, kind, name, now = Date.now()) {
+  pruneAuthAttempts(now);
+  const source = String(req.socket.remoteAddress || "unknown");
+  const account = String(name || "").trim().toLowerCase().slice(0, 80);
+  const sourceKey = `${kind}:source:${source}`;
+  const accountKey = `${kind}:account:${account}`;
+  const sourceRow = authAttempts.get(sourceKey) || { since: now, count: 0 };
+  const accountRow = authAttempts.get(accountKey) || { since: now, count: 0 };
+  const sourceCap = kind === "register" ? 5 : 30;
+  return {
+    allowed: sourceRow.count < sourceCap && accountRow.count < 10,
+    delayMs: Math.min(800, Math.max(sourceRow.count, accountRow.count) * 80),
+    keys: [sourceKey, accountKey],
+  };
+}
+
+function recordAuthAttempt(guard, success, now = Date.now()) {
+  for (const key of guard.keys) {
+    if (success && key.includes(":account:")) {
+      authAttempts.delete(key);
+      continue;
+    }
+    const row = authAttempts.get(key) || { since: now, count: 0 };
+    row.count++;
+    authAttempts.set(key, row);
+  }
+}
+
+function wait(ms) {
+  return ms > 0 ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve();
+}
 
 function loadEnvFile() {
   const file = path.join(ROOT, ".env");
@@ -537,18 +577,33 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname === "/api/register") {
       if (!needDesk(req, res)) return;
       const body = JSON.parse((await readBody(req)) || "{}");
+      const guard = authGuard(req, "register", body.name);
+      if (!guard.allowed) {
+        json(res, { ok: false, error: "Could not create that account." }, 429, { "Retry-After": "900" });
+        return;
+      }
+      await wait(guard.delayMs);
       const accounts = loadAccounts();
       const result = authLib.register(accounts, body, Date.now());
+      recordAuthAttempt(guard, result.ok);
       if (result.ok) saveAccounts(accounts);
-      json(res, authPayload(result), result.ok ? 200 : 400, authHeaders(result));
+      const payload = result.ok ? authPayload(result) : { ok: false, error: "Could not create that account." };
+      json(res, payload, result.ok ? 200 : 400, authHeaders(result));
       return;
     }
 
     if (req.method === "POST" && url.pathname === "/api/login") {
       if (!needDesk(req, res)) return;
       const body = JSON.parse((await readBody(req)) || "{}");
+      const guard = authGuard(req, "login", body.name);
+      if (!guard.allowed) {
+        json(res, { ok: false, error: "Name or password did not match." }, 429, { "Retry-After": "900" });
+        return;
+      }
+      await wait(guard.delayMs);
       const accounts = loadAccounts();
       const result = authLib.login(accounts, body, Date.now());
+      recordAuthAttempt(guard, result.ok);
       if (result.ok) saveAccounts(accounts);
       json(res, authPayload(result), result.ok ? 200 : 400, authHeaders(result));
       return;
@@ -761,7 +816,40 @@ const server = http.createServer(async (req, res) => {
       if (!user) return;
       const body = asAuthor(JSON.parse((await readBody(req)) || "{}"), user);
       const board = loadBoard();
-      const result = boardLib.addCard(board, body, Date.now());
+      const agentOffer = user.role === "agent" && body.live !== true;
+      const result = agentOffer
+        ? boardLib.offerCard(board, { ...body, notifyUser: body.notifyUser || user.name }, Date.now())
+        : boardLib.addCard(board, body, Date.now());
+      if (result.ok) saveBoard(board);
+      json(res, result, result.ok ? 200 : 400);
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/offers") {
+      const user = needUser(req, res);
+      if (!user) return;
+      const board = loadBoard();
+      json(res, { ok: true, offers: boardLib.listOffers(board, user.name) });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/offers") {
+      const user = needUser(req, res);
+      if (!user) return;
+      const body = asAuthor(JSON.parse((await readBody(req)) || "{}"), user);
+      const board = loadBoard();
+      const result = boardLib.offerCard(board, { ...body, notifyUser: body.notifyUser || user.name }, Date.now());
+      if (result.ok) saveBoard(board);
+      json(res, result, result.ok ? 200 : 400);
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/offers/submit") {
+      const user = needUser(req, res);
+      if (!user) return;
+      const body = asAuthor(JSON.parse((await readBody(req)) || "{}"), user);
+      const board = loadBoard();
+      const result = boardLib.submitOffer(board, body, Date.now());
       if (result.ok) saveBoard(board);
       json(res, result, result.ok ? 200 : 400);
       return;

@@ -1478,5 +1478,52 @@
     pingHere().then(loadBoard);
   });
 
-  boot().catch(() => setStatus("The board is not up.", "bad"));
+  let seenOffers = new Set();
+  async function refreshOffers() {
+    if (!state.user) return;
+    const banner = $("offer-banner");
+    if (!banner) return;
+    const result = await api("/api/offers");
+    const offers = (result && result.offers) || [];
+    if (!offers.length) {
+      banner.hidden = true;
+      banner.innerHTML = "";
+      return;
+    }
+    banner.hidden = false;
+    banner.innerHTML = offers.map((row) =>
+      `<p>Your agent offered <strong>${esc(row.card.title)}</strong>.</p>
+       <button type="button" class="btn" data-submit-offer="${esc(row.id)}">Submit</button>`
+    ).join("");
+    if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+      for (const row of offers) {
+        if (seenOffers.has(row.id)) continue;
+        seenOffers.add(row.id);
+        try { new Notification("Problem ready to submit", { body: row.card.title }); } catch (e) {}
+      }
+    } else if (typeof Notification !== "undefined" && Notification.permission === "default") {
+      Notification.requestPermission();
+    }
+  }
+  document.addEventListener("click", (event) => {
+    const btn = event.target.closest("[data-submit-offer]");
+    if (!btn) return;
+    event.preventDefault();
+    api("/api/offers/submit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ offerId: btn.dataset.submitOffer }),
+    }).then((result) => {
+      if (!result.ok) {
+        setStatus(result.error || "Could not submit.", "bad");
+        return;
+      }
+      setStatus("Posted. Copy for Buzz when you want it in the hallway.", "ok");
+      refreshOffers();
+      loadBoard();
+    });
+  });
+  setInterval(refreshOffers, 30000);
+
+  boot().then(refreshOffers).catch(() => setStatus("The board is not up.", "bad"));
 })();
